@@ -1,4 +1,4 @@
-package main
+package glyph
 
 var LowercaseGlyphMap = map[rune]Glyph{
 	'a': {

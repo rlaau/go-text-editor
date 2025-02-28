@@ -1,4 +1,4 @@
-package main
+package glyph
 
 var SpecialGlyphMap = map[rune]Glyph{
 	'!': {

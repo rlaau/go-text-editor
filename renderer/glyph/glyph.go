@@ -1,4 +1,4 @@
-package main
+package glyph
 
 type Width byte
 type Height byte

@@ -1,4 +1,4 @@
-package main
+package glyph
 
 var NumberGlyphMap = map[rune]Glyph{
 	'0': {
