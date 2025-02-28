@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"go_editor/renderer"
+	scrn "go_editor/screen"
 
 	"github.com/BurntSushi/xgb/xproto"
 )
 
 func main() {
-	screen, err := renderer.NewScreen(800, 600)
+	screen, err := scrn.NewScreen(800, 600)
 	if err != nil {
 		panic(err)
 	}
@@ -46,7 +46,7 @@ func main() {
 					textCount++
 					screen.Clear(0xFFFFFFFF)
 					screen.ReflectText2ScreenBuffer(
-						fmt.Sprintf("KeyPress Count: %d", textCount),
+						fmt.Sprintf("KeyPress | Count: %d", textCount),
 					)
 				}
 			}

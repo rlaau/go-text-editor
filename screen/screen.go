@@ -1,9 +1,20 @@
-package renderer
+package screen
+
+/*
+대체 이놈 기능을 뭐로 지어야 할지???
+스크린은 이미 있다.
+다만 스크린은 말 그대로 스크린임. 걍 드라이버처럼 쓰면 될듯???
+"랜더러"는 1. 텍스트 구조를 저장하고 2. FPS처리할 수 있어야 함
+=> "스크린"의 역할을 줄이기. 얘한테서 데이터 저장 로직 업에고
+=> "랜더러"에게 데이터 자장 위임.
+=> 아 근데 그정도면 걍 "에디터"클래스에서 싹 관리하는게 나아보이기도
+=> 그러면 에디터 밑에 스크린과 커멘드메니져가 있는게 좋아보임
+*/
 
 import (
 	"fmt"
 
-	glp "go_editor/renderer/glyph"
+	glp "go_editor/screen/glyph"
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
