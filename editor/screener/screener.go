@@ -1,29 +1,18 @@
-package screen
-
-/*
-대체 이놈 기능을 뭐로 지어야 할지???
-스크린은 이미 있다.
-다만 스크린은 말 그대로 스크린임. 걍 드라이버처럼 쓰면 될듯???
-"랜더러"는 1. 텍스트 구조를 저장하고 2. FPS처리할 수 있어야 함
-=> "스크린"의 역할을 줄이기. 얘한테서 데이터 저장 로직 업에고
-=> "랜더러"에게 데이터 자장 위임.
-=> 아 근데 그정도면 걍 "에디터"클래스에서 싹 관리하는게 나아보이기도
-=> 그러면 에디터 밑에 스크린과 커멘드메니져가 있는게 좋아보임
-*/
+package screener
 
 import (
 	"fmt"
 
-	glp "go_editor/screen/glyph"
+	glp "go_editor/editor/screener/glyph"
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
 )
 
-// Screen 구조체: 내부적으로 화면 버퍼, 텍스트 데이터, X 연결 상태 등을 저장하고
+// Screener 구조체: 내부적으로 화면 버퍼, 텍스트 데이터, X 연결 상태 등을 저장하고
 //
 //	그걸 렌더링하는 역할 수행
-type Screen struct {
+type Screener struct {
 	width        int
 	height       int
 	screenBuffer []uint32
@@ -42,7 +31,7 @@ type Screen struct {
 
 // ReflectText2ScreenBuffer: 매개변수로 text만 받아서,
 // Screen 구조체 필드에 있는 (textX, textY, fgColor, bgColor)로 그려준다.
-func (s *Screen) ReflectText2ScreenBuffer(text string) {
+func (s *Screener) ReflectText2ScreenBuffer(text string) {
 	x := s.textX
 	y := s.textY
 
@@ -57,7 +46,7 @@ func (s *Screen) ReflectText2ScreenBuffer(text string) {
 }
 
 // Draw: 스크린에 텍스트 표시 후 화면 갱신
-func (s *Screen) Draw() {
+func (s *Screener) Draw() {
 	// 1) 전체 화면 clear
 	s.Clear(s.bgColor)
 
@@ -68,8 +57,8 @@ func (s *Screen) Draw() {
 	s.FlushBuffer()
 }
 
-// NewScreen: Screen 생성 + X 윈도우/GC 초기화
-func NewScreen(width, height int) (*Screen, error) {
+// NewScreener: Screen 생성 + X 윈도우/GC 초기화
+func NewScreener(width, height int) (*Screener, error) {
 	// X 서버 연결
 	conn, err := xgb.NewConn()
 	if err != nil {
@@ -122,7 +111,7 @@ func NewScreen(width, height int) (*Screen, error) {
 	xproto.MapWindow(conn, windowId)
 
 	// Screen 인스턴스 생성
-	s := &Screen{
+	s := &Screener{
 		width:        width,
 		height:       height,
 		screenBuffer: make([]uint32, width*height),
@@ -142,36 +131,36 @@ func NewScreen(width, height int) (*Screen, error) {
 }
 
 // ScreenBuffer: screenBuffer getter
-func (s *Screen) ScreenBuffer() []uint32 {
+func (s *Screener) ScreenBuffer() []uint32 {
 	return s.screenBuffer
 }
 
 // SetScreenBuffer: screenBuffer 전체를 교체(원한다면)
-func (s *Screen) SetScreenBuffer(buf []uint32) {
+func (s *Screener) SetScreenBuffer(buf []uint32) {
 	if len(buf) == s.width*s.height {
 		s.screenBuffer = buf
 	}
 }
 
 // TextData: 현재 설정된 텍스트 반환
-func (s *Screen) TextData() string {
+func (s *Screener) TextData() string {
 	return s.textData
 }
 
 // SetTextData: 텍스트 변경
-func (s *Screen) SetTextData(txt string) {
+func (s *Screener) SetTextData(txt string) {
 	s.textData = txt
 }
 
 // Clear: 전체 화면을 특정 색으로 채우기
-func (s *Screen) Clear(color uint32) {
+func (s *Screener) Clear(color uint32) {
 	for i := range s.screenBuffer {
 		s.screenBuffer[i] = color
 	}
 }
 
 // 내부 메서드: 픽셀 세팅
-func (s *Screen) setPixel(x, y int, color uint32) {
+func (s *Screener) setPixel(x, y int, color uint32) {
 	if x < 0 || x >= s.width || y < 0 || y >= s.height {
 		return
 	}
@@ -179,7 +168,7 @@ func (s *Screen) setPixel(x, y int, color uint32) {
 }
 
 // 내부 메서드: 8x8 글리프 그리기
-func (s *Screen) drawGlyph(x, y int, glyph glp.Glyph, fgColor uint32, bgColor uint32) {
+func (s *Screener) drawGlyph(x, y int, glyph glp.Glyph, fgColor uint32, bgColor uint32) {
 	for row := 0; row < glp.GlyphHeight; row++ {
 		lineBits := byte(glyph[row])
 		for col := 0; col < glp.GlyphWidth; col++ {
@@ -194,7 +183,7 @@ func (s *Screen) drawGlyph(x, y int, glyph glp.Glyph, fgColor uint32, bgColor ui
 }
 
 // 내부 메서드: 문자열을 8픽셀씩 나열하여 그리기
-func (s *Screen) drawText(x, y int, text string, fgColor, bgColor uint32) {
+func (s *Screener) drawText(x, y int, text string, fgColor, bgColor uint32) {
 	for _, ch := range text {
 		glyph, ok := glp.GlyphMap[ch]
 		if !ok {
@@ -204,12 +193,12 @@ func (s *Screen) drawText(x, y int, text string, fgColor, bgColor uint32) {
 		x += glp.GlyphWidth
 	}
 }
-func (s *Screen) WaitForEvent() (xgb.Event, xgb.Error) {
+func (s *Screener) WaitForEvent() (xgb.Event, xgb.Error) {
 	return s.conn.WaitForEvent()
 }
 
 // FlushBuffer: 스크린 버퍼 → X 서버로 전송
-func (s *Screen) FlushBuffer() {
+func (s *Screener) FlushBuffer() {
 	chunkHeight := 64
 
 	for yStart := 0; yStart < s.height; yStart += chunkHeight {
