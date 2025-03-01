@@ -27,6 +27,8 @@ type Screener struct {
 	window xproto.Window   // 윈도우
 	gc     xproto.Gcontext // 그래픽 컨텍스트
 	depth  byte            // 디스플레이 비트 깊이
+	// 커서 객체 (원하면 여러 개 커서도 가능)
+	cursor *Cursor
 }
 
 // ReflectText2ScreenBuffer: 매개변수로 text만 받아서,
@@ -40,7 +42,7 @@ func (s *Screener) ReflectText2ScreenBuffer(text string) {
 		if !ok {
 			glyph = glp.Glyph{} // 없는 문자는 빈칸
 		}
-		s.drawGlyph(x, y, glyph, s.fgColor, s.bgColor)
+		s.reflectGlyph(x, y, glyph, s.fgColor, s.bgColor)
 		x += glp.GlyphWidth
 	}
 }
@@ -51,10 +53,23 @@ func (s *Screener) Draw() {
 	s.Clear(s.bgColor)
 
 	// 2) 텍스트 그리기 (예: (50, 50)에 Draw)
-	s.drawText(50, 50, s.textData, s.fgColor, s.bgColor)
+	s.reflectText(50, 50, s.textData, s.fgColor, s.bgColor)
 
 	// 3) 최종 버퍼 Flush
 	s.FlushBuffer()
+}
+
+// ReflectCursorAt: 특정 문자 뒤에 커서를 배치
+// 예: numAfterText번째 문자 뒤에 커서
+func (s *Screener) ReflectCursorAt(numAfterText int) {
+	x := s.textX + (numAfterText * glp.GlyphWidth)
+	y := s.textY
+	s.cursor.ReflectCursor(s, x, y)
+}
+
+// ClearCursor: 커서 복원
+func (s *Screener) ClearCursor() {
+	s.cursor.ClearCursor(s)
 }
 
 // NewScreener: Screen 생성 + X 윈도우/GC 초기화
@@ -125,6 +140,8 @@ func NewScreener(width, height int) (*Screener, error) {
 		window:   windowId,
 		gc:       gcId,
 		depth:    defaultScreen.RootDepth,
+		// 커서 생성 (폭=2, 높이=글리프 높이, 검정색)
+		cursor: NewCursor(2, glp.GlyphHeight, 0xFF000000),
 	}
 
 	return s, nil
@@ -168,7 +185,7 @@ func (s *Screener) setPixel(x, y int, color uint32) {
 }
 
 // 내부 메서드: 8x8 글리프 그리기
-func (s *Screener) drawGlyph(x, y int, glyph glp.Glyph, fgColor uint32, bgColor uint32) {
+func (s *Screener) reflectGlyph(x, y int, glyph glp.Glyph, fgColor uint32, bgColor uint32) {
 	for row := 0; row < glp.GlyphHeight; row++ {
 		lineBits := byte(glyph[row])
 		for col := 0; col < glp.GlyphWidth; col++ {
@@ -183,13 +200,13 @@ func (s *Screener) drawGlyph(x, y int, glyph glp.Glyph, fgColor uint32, bgColor 
 }
 
 // 내부 메서드: 문자열을 8픽셀씩 나열하여 그리기
-func (s *Screener) drawText(x, y int, text string, fgColor, bgColor uint32) {
+func (s *Screener) reflectText(x, y int, text string, fgColor, bgColor uint32) {
 	for _, ch := range text {
 		glyph, ok := glp.GlyphMap[ch]
 		if !ok {
 			glyph = glp.Glyph{} // 없는 문자는 빈칸
 		}
-		s.drawGlyph(x, y, glyph, fgColor, bgColor)
+		s.reflectGlyph(x, y, glyph, fgColor, bgColor)
 		x += glp.GlyphWidth
 	}
 }
