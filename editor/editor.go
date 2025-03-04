@@ -2,9 +2,9 @@ package editor
 
 import (
 	"fmt"
-	"time"
 
 	"go_editor/editor/screener"
+	"time"
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
@@ -14,18 +14,28 @@ import (
 //TODO 스크리너는 걍 텍스트 "받아서" 그 인자 바탕으로 렌더링만 구현
 //TODO 그 텍스트를 주고, 또 메니징 하는 것은 에디터가 하기. rope구조 등으로
 
+//TODO 이후, "명령어"는 커멘더에 위임해서 처리해보기. xgb의 이벤트를 래핑해서 인터프리트
+
 // Editor: screener를 가지고,
 //
-//	FPS 기반 화면 업데이트 & 이벤트 루프를 관리// Editor: screener를 가지고, FPS 기반 화면 업데이트 + 커서 깜빡임 + 이벤트 처리
+//	FPS 기반 화면 업데이트 & 이벤트 루프를 관리
+//
+// Editor: screener를 가지고, FPS 기반 화면 업데이트 + 커서 깜빡임 + 이벤트 처리
 type Editor struct {
 	screen      *screener.Screener
 	fpsTicker   *time.Ticker // 30FPS
 	blinkTicker *time.Ticker // 1초 주기 커서 깜빡
 	running     bool
-	textCount   int
 
+	// 간단히 2줄만 관리 (Line 0: "Hello", Line 1: "KeyPress Count: X")
+	lines []string
+
+	textCount int
+
+	// 커서 표시
 	cursorVisible bool
-	cursorPos     int // "5번째" 글자 뒤에 커서
+	cursorLine    int
+	cursorChar    int
 
 	eventChan chan xgb.Event
 }
@@ -42,10 +52,13 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 		fpsTicker:     time.NewTicker(time.Second / time.Duration(fps)), // 30FPS
 		blinkTicker:   time.NewTicker(time.Second * 1),                  // 1초 주기
 		running:       true,
+		lines:         []string{"Hello", "KeyPress Count: 0"}, // 초기 2개 라인,
 		textCount:     0,
 		cursorVisible: false,
-		cursorPos:     3,                        // 5번째 글자 뒤
-		eventChan:     make(chan xgb.Event, 20), // 이벤트 버퍼
+		// 커서는 line=1, char=3 초기값
+		cursorLine: 1,
+		cursorChar: 3,
+		eventChan:  make(chan xgb.Event, 20), // 이벤트 버퍼
 	}
 
 	return e, nil
@@ -102,15 +115,29 @@ func (e *Editor) Run() {
 			case xproto.KeyPressEvent:
 				// 키 입력 => textCount++
 				e.textCount++
-				e.screen.Clear(0xFFFFFFFF)
-				e.screen.ReflectText2ScreenBuffer(
-					fmt.Sprintf("KeyPress Count: %d", e.textCount),
-				)
-				if e.cursorVisible {
-					e.screen.ReflectCursorAt(e.cursorPos)
-				}
+				// line2 수정
+				e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
+
+				// 화면 다시 그림
+				e.redrawAll()
+
 			}
 		}
+	}
+}
+
+// redrawAll: 모든 라인을 스크리너에 반영
+func (e *Editor) redrawAll() {
+	e.screen.Clear(0xFFFFFFFF)
+
+	// 간단: line 0 -> y=50, line1 -> y= 70
+	for i, text := range e.lines {
+		e.screen.ReflectLine(i, text)
+	}
+	if e.cursorVisible {
+		e.screen.ReflectCursorAt(e.cursorLine, e.cursorChar)
+	} else {
+		e.screen.ClearCursor()
 	}
 }
 
@@ -121,15 +148,15 @@ func (e *Editor) Stop() {
 	e.blinkTicker.Stop()
 }
 
-// toggleCursorBlink: 커서 깜빡임 토글
+// toggleCursorBlink: 커서 깜빡
 func (e *Editor) toggleCursorBlink() {
 	if e.cursorVisible {
-		// 이미 커서 있으면 지움
+		println("켜짐->꺼짐")
 		e.screen.ClearCursor()
 		e.cursorVisible = false
 	} else {
-		// 없으면 그려줌
-		e.screen.ReflectCursorAt(e.cursorPos)
+		e.screen.ReflectCursorAt(e.cursorLine, e.cursorChar)
+		println("꺼짐->켜짐")
 		e.cursorVisible = true
 	}
 }
