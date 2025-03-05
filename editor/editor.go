@@ -155,7 +155,8 @@ func TranslateXEventToCommand(xu *xgbutil.XUtil, ev xgb.Event) (Command, bool) {
 const (
 	XK_ESC       = 0xFF1B
 	XK_Return    = 0xFF0D
-	XK_KP_Enter  = 0xFF8D
+	XK_KP_Enter1 = 0xFF8D
+	XK_KP_Enter2 = '\n'
 	XK_BackSpace = 0xFF08
 	XK_Left      = 0xFF51
 	XK_Right     = 0xFF53
@@ -185,10 +186,11 @@ func TranslateKeyCode(xu *xgbutil.XUtil, keycode xproto.Keycode, state uint16) (
 	}
 
 	// 특수키 매핑
+	// 심볼 단계에서 얼리 리턴해야 함. 그래야 이후에 string 룩업 가능
 	switch keysym {
 	case XK_ESC:
 		return KeyESC, nil
-	case XK_Return, XK_KP_Enter:
+	case XK_Return, XK_KP_Enter1, XK_KP_Enter2:
 		return KeyEnter1, nil
 	case XK_BackSpace:
 		return KeyBackSpace, nil
@@ -276,11 +278,34 @@ func (e *Editor) handleCommand(cmd Command) {
 		println("인서트")
 	case CmdMove:
 		println("무브")
+		if charInput, ok := cmd.Input.(CharInput); ok {
+			switch charInput.Char {
+			case KeyUp:
+				e.cursorLine = max(0, e.cursorLine-1)
+			case KeyDown:
+				e.cursorLine++ // 줄 수 제한 없음, 필요하면 maxLine 체크 추가
+			case KeyLeft:
+				e.cursorChar = max(0, e.cursorChar-1)
+			case KeyRight:
+				e.cursorChar++ // 글자 수 제한 없음, 필요하면 줄 길이 체크 추가
+			}
+			e.cursorVisible = true
+			e.screen.FlushBuffer()
+		}
+
 	}
 
 	e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
 	e.textCount++
 	e.redrawAll()
+}
+
+// min/max 유틸 함수 정의 (Go 1.20 이상이면 math 패키지 사용 가능)
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // redrawAll: 모든 라인을 스크리너에 반영
