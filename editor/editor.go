@@ -2,6 +2,7 @@ package editor
 
 import (
 	"fmt"
+	"unicode"
 
 	"go_editor/editor/screener"
 	"time"
@@ -54,17 +55,6 @@ type Command struct {
 	Input CommandInput // 입력 값 (현재는 키보드 `rune` 만 사용)
 }
 
-const (
-	KeyESC       rune = 0xFF1B
-	KeyBackSpace rune = 0xFF08
-	KeyLeft      rune = 0xFF51
-	KeyRight     rune = 0xFF53
-	KeyUp        rune = 0xFF52
-	KeyDown      rune = 0xFF54
-	KeyEnter1    rune = '\n'
-	KeyEnter2    rune = 0xFF0D
-)
-
 // Editor: screener를 가지고,
 //
 //	FPS 기반 화면 업데이트 & 이벤트 루프를 관리
@@ -86,7 +76,7 @@ type Editor struct {
 	cursorLine    int
 	cursorChar    int
 	xu            *xgbutil.XUtil
-	eventChan     chan xgb.Event
+	eventChan     chan Command
 }
 
 // NewEditor: Editor 인스턴스 생성
@@ -117,25 +107,133 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 		// 커서는 line=1, char=3 초기값
 		cursorLine: 1,
 		cursorChar: 3,
-		eventChan:  make(chan xgb.Event, 20), // 이벤트 버퍼
+		eventChan:  make(chan Command, 20), // Command 채널
 	}
 	// X 키 바인딩 초기화
 	keybind.Initialize(xu)
 	return e, nil
 }
 
-// collectEvents: 별도 고루틴에서 X 이벤트를 무한정 수신하여 eventChan에 보냄
+// TranslateXEventToCommand: X 이벤트를 Command로 변환
+func TranslateXEventToCommand(xu *xgbutil.XUtil, ev xgb.Event) (Command, bool) {
+	switch e := ev.(type) {
+	case xproto.KeyPressEvent:
+		keyRune, err := TranslateKeyCode(xu, e.Detail, e.State)
+
+		if err != nil {
+			return Command{}, false
+		}
+
+		var cmd CommandCode
+		switch keyRune {
+		case KeyESC:
+			cmd = CmdExit
+		case KeyBackSpace:
+			cmd = CmdDelete
+		case KeyLeft, KeyRight, KeyDown, KeyUp:
+			cmd = CmdMove
+		case KeyEnter1, KeyEnter2:
+			cmd = CmdInsert
+		default:
+			cmd = CmdInsert
+		}
+		println("받은 룬", keyRune)
+
+		return Command{
+			Code:  cmd,
+			Input: CharInput{keyRune},
+		}, true
+
+	default:
+		return Command{}, false
+	}
+}
+
+// TranslateKeyCode: KeyCode를 KeySym으로 변환 후 rune으로 변환
+
+// X11 KeySym 상수 정의 (X11/keysymdef.h 참고)
+const (
+	XK_ESC       = 0xFF1B
+	XK_Return    = 0xFF0D
+	XK_KP_Enter  = 0xFF8D
+	XK_BackSpace = 0xFF08
+	XK_Left      = 0xFF51
+	XK_Right     = 0xFF53
+	XK_Up        = 0xFF52
+	XK_Down      = 0xFF54
+)
+
+const (
+	KeyESC       rune = 0xFF1B
+	KeyBackSpace rune = 0xFF08
+	KeyLeft      rune = 0xFF51
+	KeyRight     rune = 0xFF53
+	KeyUp        rune = 0xFF52
+	KeyDown      rune = 0xFF54
+	KeyEnter1    rune = '\n'
+	KeyEnter2    rune = 0xFF0D
+)
+
+// TranslateKeyCode: KeyCode를 KeySym으로 변환 후 rune으로 변환
+
+// TranslateKeyCode: KeyCode를 KeySym으로 변환 후 rune으로 변환
+func TranslateKeyCode(xu *xgbutil.XUtil, keycode xproto.Keycode, state uint16) (rune, error) {
+	// keycode를 KeySym으로 변환
+	keysym := keybind.KeysymGet(xu, keycode, 0)
+	if keysym == 0 {
+		return 0, fmt.Errorf("no keysym found for keycode %d", keycode)
+	}
+
+	// 특수키 매핑
+	switch keysym {
+	case XK_ESC:
+		return KeyESC, nil
+	case XK_Return, XK_KP_Enter:
+		return KeyEnter1, nil
+	case XK_BackSpace:
+		return KeyBackSpace, nil
+	case XK_Left:
+		return KeyLeft, nil
+	case XK_Right:
+		return KeyRight, nil
+	case XK_Up:
+		return KeyUp, nil
+	case XK_Down:
+		return KeyDown, nil
+	}
+
+	// 일반 문자 키 처리
+	keysymStr := keybind.LookupString(xu, state, keycode)
+	if keysymStr == "" {
+		return 0, fmt.Errorf("failed to convert keysym to string")
+	}
+
+	runes := []rune(keysymStr)
+	if len(runes) == 0 {
+		return 0, fmt.Errorf("failed to convert keysym to rune")
+	}
+
+	// Shift 키 처리
+	if state&xproto.ModMaskShift > 0 {
+		return unicode.ToUpper(runes[0]), nil
+	}
+	return runes[0], nil
+}
+
+// collectEvents: X 이벤트를 수신하여 Command 변환 후 eventChan으로 전달
 func (e *Editor) collectEvents() {
 	for {
-		ev, err := e.screen.WaitForEvent() // 블로킹
+		ev, err := e.xu.Conn().WaitForEvent()
 		if err != nil {
-			// 에러 발생 시 채널 닫고 종료
 			close(e.eventChan)
 			return
 		}
 		if ev != nil {
-			// 이벤트를 eventChan으로 전달
-			e.eventChan <- ev
+			cmd, ok := TranslateXEventToCommand(e.xu, ev)
+			println("코드", cmd.Code, "값", cmd.Input)
+			if ok {
+				e.eventChan <- cmd
+			}
 		}
 	}
 }
@@ -156,34 +254,33 @@ func (e *Editor) Run() {
 			// 30FPS로 화면 Flush
 			e.screen.FlushBuffer()
 
-		case ev, ok := <-e.eventChan:
-			// 이벤트 채널에서 이벤트 수신
+		case cmd, ok := <-e.eventChan:
 			if !ok {
-				// 채널이 닫힘 => 종료
 				e.running = false
 				break
 			}
-			// 이벤트 처리
-			switch ev.(type) {
-			case xproto.ExposeEvent:
-				// 노출 이벤트 (원한다면 화면 다시 그려도 됨)
-				// e.screen.Clear(0xFFFFFFFF)
-				// e.screen.ReflectText2ScreenBuffer(fmt.Sprintf("KeyPress Count: %d", e.textCount))
-				// if e.cursorVisible {
-				// 	e.screen.ReflectCursorAt(e.cursorPos)
-				// }
-			case xproto.KeyPressEvent:
-				// 키 입력 => textCount++
-				e.textCount++
-				// line2 수정
-				e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
-
-				// 화면 다시 그림
-				e.redrawAll()
-
-			}
+			e.handleCommand(cmd)
 		}
 	}
+}
+
+// handleCommand: Command를 처리
+func (e *Editor) handleCommand(cmd Command) {
+	switch cmd.Code {
+	case CmdExit:
+		println("엑싯")
+		e.running = false
+	case CmdDelete:
+		println("딜릿")
+	case CmdInsert:
+		println("인서트")
+	case CmdMove:
+		println("무브")
+	}
+
+	e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
+	e.textCount++
+	e.redrawAll()
 }
 
 // redrawAll: 모든 라인을 스크리너에 반영
@@ -211,12 +308,10 @@ func (e *Editor) Stop() {
 // toggleCursorBlink: 커서 깜빡
 func (e *Editor) toggleCursorBlink() {
 	if e.cursorVisible {
-		println("켜짐->꺼짐")
 		e.screen.ClearCursor()
 		e.cursorVisible = false
 	} else {
 		e.screen.ReflectCursorAt(e.cursorLine, e.cursorChar)
-		println("꺼짐->켜짐")
 		e.cursorVisible = true
 	}
 }
