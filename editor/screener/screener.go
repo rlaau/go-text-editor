@@ -7,6 +7,7 @@ import (
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
+	"github.com/BurntSushi/xgbutil"
 )
 
 // Screener 구조체: 내부적으로 화면 버퍼, 텍스트 데이터, X 연결 상태 등을 저장하고
@@ -14,26 +15,21 @@ import (
 //	그걸 렌더링하는 역할 수행
 const LineHeight = 16 // 한 줄 높이 16픽셀
 type Screener struct {
-	width  int
-	height int
-	// lineCount = height / LineHeight (예시)
-	lineCount int
-
-	// screenLines[lineIndex] → []uint32, 길이 = (LineHeight * width)
-	// 라인 하나에 16*width 픽셀
+	width        int
+	height       int
+	lineCount    int
 	screenLines  [][]uint32
 	screenBuffer []uint32
 
-	fgColor uint32 // 전경색 (문자)
-	bgColor uint32 // 배경색
-	// 텍스트 출력 위치/색상
+	fgColor uint32
+	bgColor uint32
+
 	textX  int
 	textY  int
-	conn   *xgb.Conn       // XGB 연결
-	window xproto.Window   // 윈도우
-	gc     xproto.Gcontext // 그래픽 컨텍스트
-	depth  byte            // 디스플레이 비트 깊이
-	// 커서 객체 (원하면 여러 개 커서도 가능)
+	xu     *xgbutil.XUtil // XGBUtil 연결 객체
+	window xproto.Window
+	gc     xproto.Gcontext
+	depth  byte
 	cursor *Cursor
 }
 
@@ -67,31 +63,25 @@ func (s *Screener) ClearCursor() {
 	s.cursor.ClearCursor(s)
 }
 
-// NewScreener: Screen 생성 + X 윈도우/GC 초기화
-func NewScreener(width, height int) (*Screener, error) {
-	// X 서버 연결
-	conn, err := xgb.NewConn()
-	if err != nil {
-		return nil, fmt.Errorf("XGB 연결 실패: %v", err)
-	}
+// NewScreener: XGBUtil을 기반으로 Screener 초기화
+func NewScreener(xu *xgbutil.XUtil, width, height int) (*Screener, error) {
+	setup := xproto.Setup(xu.Conn())
+	defaultScreen := setup.DefaultScreen(xu.Conn())
 
-	setup := xproto.Setup(conn)
-	defaultScreen := setup.DefaultScreen(conn)
-
-	// 윈도우 생성
-	windowId, err := xproto.NewWindowId(conn)
+	windowId, err := xproto.NewWindowId(xu.Conn())
 	if err != nil {
 		return nil, err
 	}
+
 	xproto.CreateWindow(
-		conn,
+		xu.Conn(),
 		xproto.WindowClassCopyFromParent,
 		windowId,
 		defaultScreen.Root,
-		0, 0, // x, y 위치
-		uint16(width),  // 폭
-		uint16(height), // 높이
-		0,              // border width
+		0, 0,
+		uint16(width),
+		uint16(height),
+		0,
 		xproto.WindowClassInputOutput,
 		defaultScreen.RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask,
@@ -101,13 +91,13 @@ func NewScreener(width, height int) (*Screener, error) {
 		},
 	)
 
-	// GC 생성
-	gcId, err := xproto.NewGcontextId(conn)
+	gcId, err := xproto.NewGcontextId(xu.Conn())
 	if err != nil {
 		return nil, err
 	}
+
 	xproto.CreateGC(
-		conn,
+		xu.Conn(),
 		gcId,
 		xproto.Drawable(windowId),
 		xproto.GcForeground|xproto.GcBackground,
@@ -117,34 +107,29 @@ func NewScreener(width, height int) (*Screener, error) {
 		},
 	)
 
-	// 윈도우 맵핑(표시)
-	xproto.MapWindow(conn, windowId)
-	// 라인 수 계산
+	xproto.MapWindow(xu.Conn(), windowId)
+
 	lineCount := height / LineHeight
 	screenLines := make([][]uint32, lineCount)
 	for i := 0; i < lineCount; i++ {
-		// 한 줄 = 16*width
 		screenLines[i] = make([]uint32, LineHeight*width)
 	}
-	// Screen 인스턴스 생성
+
 	s := &Screener{
-		width:  width,
-		height: height,
-		// 라인 초기화 (아직 0개 라인)
-		lineCount:   lineCount,
-		screenLines: screenLines,
-		// 최종 flush 시 사용
+		width:        width,
+		height:       height,
+		lineCount:    lineCount,
+		screenLines:  screenLines,
 		screenBuffer: make([]uint32, width*height),
-		fgColor:      0xFF000000, // 검정
-		bgColor:      0xFFFFFFFF, // 흰색
+		fgColor:      0xFF000000,
+		bgColor:      0xFFFFFFFF,
 		textX:        50,
 		textY:        50,
-		conn:         conn,
+		xu:           xu,
 		window:       windowId,
 		gc:           gcId,
 		depth:        defaultScreen.RootDepth,
-		// 커서 생성 (폭=2, 높이=글리프 높이, 검정색)
-		cursor: NewCursor(2, glp.GlyphHeight, 0xFF000000),
+		cursor:       NewCursor(2, glp.GlyphHeight, 0xFF000000),
 	}
 
 	return s, nil
@@ -233,8 +218,12 @@ func (s *Screener) setLinePixel(lineIndex, row, col int, color uint32) {
 	s.screenLines[lineIndex][idx] = color
 }
 
-func (s *Screener) WaitForEvent() (xgb.Event, xgb.Error) {
-	return s.conn.WaitForEvent()
+func (s *Screener) WaitForEvent() (xgb.Event, error) {
+	ev, err := s.xu.Conn().WaitForEvent()
+	if err != nil {
+		return nil, err
+	}
+	return ev, nil
 }
 
 // FlushBuffer: line기준 => 전체 스크린 버퍼 => X 서버
@@ -280,7 +269,7 @@ func (s *Screener) FlushBuffer() {
 			}
 		}
 		xproto.PutImage(
-			s.conn,
+			s.xu.Conn(),
 			xproto.ImageFormatZPixmap,
 			xproto.Drawable(s.window),
 			s.gc,
