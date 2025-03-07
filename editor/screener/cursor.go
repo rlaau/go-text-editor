@@ -6,7 +6,7 @@ type Cursor struct {
 	color          uint32
 	capturedBuffer []uint32
 
-	currentLine, currentRow, currentCol int
+	currentLine, currentY, currentX int
 	visible                             bool
 }
 
@@ -24,8 +24,8 @@ func (c *Cursor) ReflectCursor(screen *Screener, lineIndex, row, col int) {
 		c.ClearCursor(screen)
 	}
 	c.currentLine = lineIndex
-	c.currentRow = row
-	c.currentCol = col
+	c.currentY = row
+	c.currentX = col
 
 	c.captureBuffer(screen)
 	// 커서 폭*높이만큼 픽셀 덮어쓰기
@@ -54,8 +54,8 @@ func (c *Cursor) captureBuffer(screen *Screener) {
 	for ry := 0; ry < c.height; ry++ {
 		for cx := 0; cx < c.width; cx++ {
 			lineIndex := c.currentLine
-			r := c.currentRow + ry
-			cx2 := c.currentCol + cx
+			r := c.currentY + ry
+			cx2 := c.currentX + cx
 			if lineIndex < 0 || lineIndex >= screen.lineCount {
 				c.capturedBuffer[idx] = 0
 			} else if r < 0 || r >= LineHeight {
@@ -78,8 +78,8 @@ func (c *Cursor) restoreBuffer(screen *Screener) {
 	for ry := 0; ry < c.height; ry++ {
 		for cx := 0; cx < c.width; cx++ {
 			lineIndex := c.currentLine
-			r := c.currentRow + ry
-			cx2 := c.currentCol + cx
+			r := c.currentY + ry
+			cx2 := c.currentX + cx
 			if lineIndex < 0 || lineIndex >= screen.lineCount {
 				idx++
 				continue

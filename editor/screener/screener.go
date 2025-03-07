@@ -33,18 +33,6 @@ type Screener struct {
 	cursor *Cursor
 }
 
-// // Draw: 스크린에 텍스트 표시 후 화면 갱신
-// func (s *Screener) Draw() {
-// 	// 1) 전체 화면 clear
-// 	s.Clear(s.bgColor)
-
-// 	// 2) 텍스트 그리기 (예: (50, 50)에 Draw)
-// 	s.reflectText(50, 50, s.textData, s.fgColor, s.bgColor)
-
-// 	// 3) 최종 버퍼 Flush
-// 	s.FlushBuffer()
-// }
-
 // ReflectCursorAt: lineIndex, charIndex
 // cursor.ReflectCursor => lineBuffer 상에 커서 픽셀 덮어쓰기
 func (s *Screener) ReflectCursorAt(lineIndex, charIndex int) {

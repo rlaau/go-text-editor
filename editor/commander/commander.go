@@ -10,8 +10,37 @@ import (
 	"github.com/BurntSushi/xgbutil/keybind"
 )
 
+// Commander: 이벤트 수집 및 처리 담당
+type Commander struct {
+	xu        *xgbutil.XUtil
+	eventChan chan Command
+}
+type Command struct {
+	Code  CommandCode
+	Input CommandInput
+}
+
 // CommandCode: 명령 코드
 type CommandCode uint8
+
+// CommandInput 인터페이스
+type CommandInput interface {
+	IsCommandInput()
+}
+
+// CharInput: `rune`을 감싸는 구조체
+type CharInput struct {
+	Char rune
+}
+
+func (c CharInput) IsCommandInput() {}
+
+// ClickInput: 마우스 클릭 입력
+type ClickInput struct {
+	Height, Width int
+}
+
+func (c ClickInput) IsCommandInput() {}
 
 const (
 	CmdMove CommandCode = iota
@@ -45,37 +74,7 @@ const (
 	KeyEnter2    rune = 0xFF0D
 )
 
-// CommandInput 인터페이스
-type CommandInput interface {
-	IsCommandInput()
-}
-
-// CharInput: `rune`을 감싸는 구조체
-type CharInput struct {
-	Char rune
-}
-
-func (c CharInput) IsCommandInput() {}
-
-// ClickInput: 마우스 클릭 입력
-type ClickInput struct {
-	Height, Width int
-}
-
-func (c ClickInput) IsCommandInput() {}
-
 // Command: 실행할 명령
-type Command struct {
-	Code  CommandCode
-	Input CommandInput
-}
-
-// Commander: 이벤트 수집 및 처리 담당
-type Commander struct {
-	xu        *xgbutil.XUtil
-	eventChan chan Command
-}
-
 func NewCommandor(xu *xgbutil.XUtil) *Commander {
 	return &Commander{
 		xu:        xu,

@@ -67,7 +67,7 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 // Run: 메인 이벤트 루프
 func (e *Editor) Run() {
 	// 이벤트 전용 고루틴: 블로킹 WaitForEvent() → eventChan 로 전달
-	e.redrawAll()
+	e.reflectAll()
 	e.commander.StartListening()
 
 	for e.running {
@@ -121,7 +121,7 @@ func (e *Editor) processCommand(cmd commander.Command) {
 
 	e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
 	e.textCount++
-	e.redrawAll()
+	e.reflectAll()
 }
 
 // min/max 유틸 함수 정의 (Go 1.20 이상이면 math 패키지 사용 가능)
@@ -132,8 +132,8 @@ func max(a, b int) int {
 	return b
 }
 
-// redrawAll: 모든 라인을 스크리너에 반영
-func (e *Editor) redrawAll() {
+// reflectAll: 모든 라인을 스크리너에 반영
+func (e *Editor) reflectAll() {
 	e.screener.Clear(0xFFFFFFFF)
 
 	// 간단: line 0 -> y=50, line1 -> y= 70
