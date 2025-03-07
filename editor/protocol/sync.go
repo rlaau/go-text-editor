@@ -8,6 +8,8 @@ type SyncProtocol struct {
 
 // SyncData: 요구사항에서 주어진 구조
 // -> 여기에 Insert/Delete/SliceNode/ProcessCommand 메서드를 추가 (이중 연결 리스트 버전)
+// TODO 추후 다중초점 혹은 AVL트리 방식으로 노드 관리하게 하기
+// TODO 그럼 성능이 더욱 안정적으로 나오게 할 수 있음
 type SyncData struct {
 	head *SyncNode
 	// 필요하면 tail, length 등을 둘 수도 있음
@@ -65,7 +67,7 @@ func (sp *SyncProtocol) resolveSync() {
 // ----------------------------------------------------
 // (1) insert(n, newData string)
 //
-//	n번째 노드 "뒤"에 새 노드를 삽입 (1-based index)
+//	n번째 노드 "뒤"에 새 노드를 삽입 (0-based index)
 //
 
 func (sd *SyncData) insert(n uint, newData string) {
@@ -104,7 +106,7 @@ func (sd *SyncData) insert(n uint, newData string) {
 // ----------------------------------------------------
 // (2) delete(n int)
 //
-//	n번째 노드를 삭제 (1-based index)
+//	n번째 노드를 삭제 (0-based index)
 //
 // ----------------------------------------------------
 func (sd *SyncData) delete(n uint) {
