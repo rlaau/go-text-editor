@@ -49,16 +49,3 @@ type Lines[L Lineable, F Flatted] struct {
 func (l *Lines[L, F]) InsertLine(line Line[L, F]) {
 	l.tree = append(l.tree, line)
 }
-
-// ✅ (6) 예제 실행 코드
-func main() {
-	// ✅ LinePieceTable을 사용하는 Lines 생성
-	lines := Lines[LinePieceTable, []byte]{}
-	lines.InsertLine(LinePieceTable{data: []byte("Hello, World!")})
-
-	// ✅ LineScreenBuffer를 사용하는 Lines 생성
-	screenLines := Lines[LineScreenBuffer, []uint32]{}
-	screenLines.InsertLine(LineScreenBuffer{data: []uint32{1, 2, 3, 4}})
-
-	println("Lines inserted successfully")
-}
