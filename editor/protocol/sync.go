@@ -6,6 +6,24 @@ type SyncProtocol struct {
 	changedNode   *SyncNode
 }
 
+// TODO cmd, 커서좌표 받아서 처리 후에
+// TODO 커서 좌표 다시 반환함
+// 한번에 하나씩 처리한다는 것을 잊지 말기
+// 하나 처리 후, 그떄마다 싱크 맞추기
+func (sp *SyncProtocol) ProcessCommand(cmd string, cursorX int, cursorY int) (int, int) {
+	// 아직 구체 구현 없음
+	return 0, 0
+}
+
+// TODO ProcessCommand내에서, cmd파싱 후 syncData호출한 후에
+// TODO 어느 노드에, 어떤 변경 했는지를 싱크프로토콜에 기록
+func (sp *SyncProtocol) markSync() {}
+
+// TODO 싱크마크 바탕으로, 해당 노드 찾아가서 피스테이블에 flatted 호출 후 싱크 맞추기
+func (sp *SyncProtocol) resolveSync() {
+
+}
+
 // SyncData: 요구사항에서 주어진 구조
 // -> 여기에 Insert/Delete/SliceNode/ProcessCommand 메서드를 추가 (이중 연결 리스트 버전)
 // TODO 추후 다중초점 혹은 AVL트리 방식으로 노드 관리하게 하기
@@ -39,30 +57,6 @@ const (
 	NodeDeleted
 	Hold
 )
-
-// ----------------------------------------------------
-// (4) ProcessCommand(cmd Command)
-//
-//	우선은 "받기만" 함 (스텁)
-//
-// ----------------------------------------------------
-// TODO cmd, 커서좌표 받아서 처리 후에
-// TODO 커서 좌표 다시 반환함
-// 한번에 하나씩 처리한다는 것을 잊지 말기
-// 하나 처리 후, 그떄마다 싱크 맞추기
-func (sp *SyncProtocol) ProcessCommand(cmd string, cursorX int, cursorY int) (int, int) {
-	// 아직 구체 구현 없음
-	return 0, 0
-}
-
-// TODO ProcessCommand내에서, cmd파싱 후 syncData호출한 후에
-// TODO 어느 노드에, 어떤 변경 했는지를 싱크프로토콜에 기록
-func (sp *SyncProtocol) markSync() {}
-
-// TODO 싱크마크 바탕으로, 해당 노드 찾아가서 피스테이블에 flatted 호출 후 싱크 맞추기
-func (sp *SyncProtocol) resolveSync() {
-
-}
 
 // ----------------------------------------------------
 // (1) insert(n, newData string)
