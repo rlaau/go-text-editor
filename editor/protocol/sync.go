@@ -1,5 +1,10 @@
 package main
 
+// ----------------------------------------------------
+// (1) 기본 구조체 정의
+// ----------------------------------------------------
+
+// SyncProtocol은 편집/동기화 관련 처리를 위한 구조체 (여기서는 stub)
 type SyncProtocol struct {
 	syncData      *SyncData
 	SyncStateCode SyncStateCode
@@ -28,27 +33,29 @@ func (sp *SyncProtocol) resolveSync() {
 // -> 여기에 Insert/Delete/SliceNode/ProcessCommand 메서드를 추가 (이중 연결 리스트 버전)
 // TODO 추후 다중초점 혹은 AVL트리 방식으로 노드 관리하게 하기
 // TODO 그럼 성능이 더욱 안정적으로 나오게 할 수 있음
+// SyncData는 노드를 관리하는 연결 리스트 구조체 (여기서는 이중 연결 리스트)
 type SyncData struct {
 	head *SyncNode
-	// 필요하면 tail, length 등을 둘 수도 있음
+	// (필요시 tail, length 등 추가 가능)
 }
 
-// SyncNode: 이중 연결 리스트를 구성하기 위해 prev, next 모두 추가
+// SyncNode는 두 편집 구조(PieceTable, LineBuffer)를 묶은 노드
 type SyncNode struct {
-	PieceTable PieceTable
-	LineBuffer LineBuffer
+	PieceTable *PieceTable
+	LineBuffer *LineBuffer
 
 	prev *SyncNode
 	next *SyncNode
 }
 
-type PieceTable struct {
-	data string
-}
+// 피스테이블 데이터를 라인버퍼에 동기화
+func (sn *SyncNode) syncData() {}
+
 type LineBuffer struct {
 	data []uint32
 }
 
+// 편집 상태 코드 (추후 상세 동기화 시 사용)
 type SyncStateCode int
 
 const (
@@ -59,77 +66,74 @@ const (
 )
 
 // ----------------------------------------------------
-// (1) insert(n, newData string)
-//
-//	n번째 노드 "뒤"에 새 노드를 삽입 (0-based index)
-//
+// (2) SyncData 메서드 : insert, delete, sliceNode (모두 zero-based)
+// ----------------------------------------------------
 
+// insert(n, newData) : n번째 위치에 새 노드를 삽입
+//
+//	0-based 인덱스에서, 예를 들어, insert(0, "hello") → 리스트가 비어있다면 head가 "hello"가 됨.
+//	만약 이미 노드가 존재할 경우, insert(0, "world")는 새 노드를 head로 만들어 기존 노드가 뒤로 밀림.
 func (sd *SyncData) insert(n uint, newData string) {
-
 	newNode := &SyncNode{
-		PieceTable: PieceTable{data: newData},
-		LineBuffer: LineBuffer{},
+		PieceTable: NewPieceTable(newData),
+		LineBuffer: &LineBuffer{},
 		prev:       nil,
 		next:       nil,
 	}
 
+	// 빈 리스트인 경우
 	if sd.head == nil {
-		// 리스트가 비어있다면 새 노드를 head로 설정
 		sd.head = newNode
 		return
 	}
 
-	// n번째 노드 찾아 이동
+	// 삽입 위치가 0이면, 새 노드를 head로
+	if n == 0 {
+		newNode.next = sd.head
+		sd.head.prev = newNode
+		sd.head = newNode
+		return
+	}
+
+	// 0이 아닌 경우, (n-1)번째 노드를 찾아 그 뒤에 삽입
 	cur := sd.head
-	count := 0
-	for count < int(n) && cur.next != nil {
+	count := uint(0)
+	for count < n-1 && cur.next != nil {
 		cur = cur.next
 		count++
 	}
-	// 현재 cur가 "n번째 노드"
-	// => 그 "뒤"에 newNode를 삽입
-
-	newNode.prev = cur
+	// cur가 (n-1)번째 노드임
 	newNode.next = cur.next
+	newNode.prev = cur
 	if cur.next != nil {
 		cur.next.prev = newNode
 	}
 	cur.next = newNode
 }
 
-// ----------------------------------------------------
-// (2) delete(n int)
-//
-//	n번째 노드를 삭제 (0-based index)
-//
-// ----------------------------------------------------
+// delete(n): n번째 노드를 삭제 (0-based)
 func (sd *SyncData) delete(n uint) {
 	if sd.head == nil {
 		return
 	}
-
 	cur := sd.head
-	count := uint(0)
-
+	var count uint = 0
 	for count < n && cur.next != nil {
 		cur = cur.next
 		count++
 	}
-	// 현재 cur가 n번째 노드
 	if count != n {
-		// n이 리스트 길이보다 큼 -> 삭제 불가
+		// n이 리스트 길이보다 큰 경우 아무 작업도 하지 않음
 		return
 	}
-
-	// 이제 cur를 제거
+	// cur가 n번째 노드
 	if cur.prev == nil {
-		// head 노드 삭제
+		// head 삭제
 		sd.head = cur.next
 		if sd.head != nil {
 			sd.head.prev = nil
 		}
 	} else {
-		// 중간/마지막 노드 삭제
 		cur.prev.next = cur.next
 		if cur.next != nil {
 			cur.next.prev = cur.prev
@@ -137,54 +141,37 @@ func (sd *SyncData) delete(n uint) {
 	}
 }
 
-// ----------------------------------------------------
-// (3) sliceNode(n, char int)
-//
-//	n번째 노드의 PieceTable.data를 char 지점에서 슬라이스
-//	뒷부분은 새 노드로 만들어 n번째 노드 "뒤"에 삽입
-//
-// 코드 보면 알겠지만, exclusive한 연산임
-// 2라하면, 0,1포함, 2는 배제하는 슬라이싱
-// 직관적으론, "n번쨰 글자가지 포함시키고, 그 이후 배제"로 보면 될듯
-// "hello"를 5기준 슬라이스 하면 "hello",""로 됨
-// ----------------------------------------------------
+// sliceNode(n, char): n번째 노드의 PieceTable.data를 char 인덱스에서 슬라이스
+// 슬라이스는 exclusive 연산으로, 앞쪽에는 [0, char) (즉, char 인덱스 미포함), 뒷쪽은 [char, end)
+// 예를 들어 "hello"에서 sliceNode(0, 2) → "he", "llo"
+// n번째 노드의 data에 대해, n번째 글자가 포함되지 않고, char 인덱스 이전까지만 남김.
 func (sd *SyncData) sliceNode(n, char uint) {
 	if sd.head == nil {
 		return
 	}
-
 	// n번째 노드 찾기
 	cur := sd.head
-	count := uint(0)
+	var count uint = 0
 	for count < n && cur.next != nil {
 		cur = cur.next
 		count++
 	}
 	if count != n {
-		// 범위 벗어남
-		return
+		return // 범위 초과
 	}
 
-	// 이제 cur가 n번째 노드
-	original := cur.PieceTable.data
-	if int(char) > len(original) {
-		return
-	}
+	frontPT, backPT := cur.PieceTable.SlicePieceTable(int(char))
 
-	front := original[:char]
-	back := original[char:]
+	// n번째 노드는 front로 변경
+	cur.PieceTable = frontPT
 
-	// (a) n번째 노드에는 front만 남긴다
-	cur.PieceTable.data = front
-
-	// (b) 뒷부분(back)은 새 노드로 만들어 n번째 노드 뒤에 삽입
+	// back이 존재하면, 새 노드를 만들어 n번째 노드 뒤에 삽입
 	newNode := &SyncNode{
-		PieceTable: PieceTable{data: back},
-		LineBuffer: LineBuffer{},
+		PieceTable: backPT,
+		LineBuffer: &LineBuffer{},
 		prev:       cur,
 		next:       cur.next,
 	}
-	// 링크 연결
 	if cur.next != nil {
 		cur.next.prev = newNode
 	}
@@ -192,7 +179,7 @@ func (sd *SyncData) sliceNode(n, char uint) {
 }
 
 // ----------------------------------------------------
-// SyncProtocol에 대한 생성자 (간단 예시)
+// (3) SyncProtocol 생성자
 // ----------------------------------------------------
 func NewSyncProtocol() *SyncProtocol {
 	return &SyncProtocol{
