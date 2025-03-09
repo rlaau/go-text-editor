@@ -1,6 +1,9 @@
 package main
 
-import glp "go_editor/editor/screener/glyph"
+import (
+	"go_editor/editor/commander"
+	glp "go_editor/editor/screener/glyph"
+)
 
 // ----------------------------------------------------
 // (1) 기본 구조체 정의
@@ -10,10 +13,11 @@ import glp "go_editor/editor/screener/glyph"
 type SyncProtocol struct {
 	screenWidth  int
 	screenHeight int
-	fgColor      uint32
-	bgColor      uint32
+	LineHeight   int
 
-	cursor *Cursor
+	fgColor uint32
+	bgColor uint32
+	cursor  *Cursor
 
 	syncData      *SyncData
 	SyncStateCode SyncStateCode
@@ -23,17 +27,32 @@ type SyncProtocol struct {
 // ----------------------------------------------------
 // (3) SyncProtocol 생성자
 // ----------------------------------------------------
-func NewSyncProtocol(screenWidth, screenHeight int, fg, bg uint32) *SyncProtocol {
-	return &SyncProtocol{
+// TODO 추후 "스크린스펙"받는 로직으로 변경
+func NewSyncProtocol(screenWidth, screenHeight int, fg, bg uint32, LineHeight int) *SyncProtocol {
+	lineCount := screenHeight / LineHeight
+	syncData := &SyncData{}
+	// 우선은 라인의 텍스트를 빈 문자열로 다 초기화 해 둚
+	//다만 이 단계에선 아직 텍스트-라인 버퍼간 싱크가 없음
+	for range lineCount {
+		syncData.insertNode(0, "")
+	}
+
+	sp := &SyncProtocol{
 		screenWidth:   screenWidth,
 		screenHeight:  screenHeight,
+		LineHeight:    LineHeight,
 		fgColor:       fg,
 		bgColor:       bg,
-		syncData:      &SyncData{},
+		syncData:      syncData,
 		SyncStateCode: NodeModified,
 		changedNode:   nil,
 		cursor:        NewCursor(2, glp.GlyphHeight, 0xFF000000),
 	}
+	//여기서 워킹 통해서 각 노드마다 싱크 맞춰줌
+	syncData.ForEach(func(sn *SyncNode) {
+		sp.syncNode(sn)
+	})
+	return sp
 }
 
 // TODO cmd, 커서좌표 받아서 처리 후에
@@ -41,9 +60,23 @@ func NewSyncProtocol(screenWidth, screenHeight int, fg, bg uint32) *SyncProtocol
 // TODO 우선적으로 커멘드를 인터프리팅 후에 실행하기
 // ex) "\n"들어오면 Slice또는 InsertNode
 // ex) Del이면 legth기반으로 Modify or DelNode
-func (sp *SyncProtocol) ProcessCommand(cmd string, cursorX int, cursorY int) (int, int) {
+func (sp *SyncProtocol) ProcessCommand(cmd commander.Command) (int, int) {
+	//TODO 1. 명령 인터프리팅
+	//TODO cmd-> 싱크 코드 및 데이터
+	//TODO 2. 인터프리트 된 명령어 실행 및 싱크 마킹
+	//TODO 이후 1)커서 리턴 2) 싱크 맞추기
+	//TODO 이후 3. 커서까지 싱크 맞추기
 	// 아직 구체 구현 없음
 	return 0, 0
+}
+
+func (sp *SyncProtocol) interpretCommand(cmd commander.Command) opSequence {
+	//TODO 여기선, 시뮬레이팅 후, "정확한 op코드 생성"을 하기
+	//!! 이 함수부터 코딩 시작하기!!!!!!!
+	//!! 적당히 인터프리팅 후에
+	//!! 모든 초안을 여기서 op시퀀시스에 다 저장!!!
+	//!! 이후 프로세스 커멘드에선 해당 op시퀀스에 맞게 작동만 하기!!!
+	return nil
 }
 
 // TODO ProcessCommand내에서, cmd파싱 후 syncData호출한 후에
@@ -51,8 +84,18 @@ func (sp *SyncProtocol) ProcessCommand(cmd string, cursorX int, cursorY int) (in
 func (sp *SyncProtocol) markSync() {}
 
 // TODO 싱크마크 바탕으로, 해당 노드 찾아가서 피스테이블에 flatted 호출 후 싱크 맞추기
+// TODO 라인버퍼 nil 검증 후 아예 NewLineBuffer를 호출 후에 새로 하기
 func (sp *SyncProtocol) resolveSync() {
 
+}
+
+func (sp *SyncProtocol) syncNode(sn *SyncNode) {
+	str := sn.PieceTable.String()
+	lineBuffer := sn.LineBuffer
+	if lineBuffer == nil {
+		lineBuffer = sp.NewLineBuffer()
+	}
+	sp.ReflectLine(lineBuffer, str)
 }
 
 // SyncData: 요구사항에서 주어진 구조
@@ -74,9 +117,6 @@ type SyncNode struct {
 	next *SyncNode
 }
 
-// 피스테이블 데이터를 라인버퍼에 동기화
-func (sn *SyncNode) syncData() {}
-
 // 편집 상태 코드 (추후 상세 동기화 시 사용)
 type SyncStateCode int
 
@@ -92,7 +132,16 @@ type ModifyCode int
 const (
 	InsertASCII ModifyCode = iota
 	DeleteASCII
+	HoldASCII
 )
+
+func (sd *SyncData) ForEach(fn func(cur *SyncNode)) {
+	cur := sd.head
+	for cur != nil {
+		fn(cur)
+		cur = cur.next
+	}
+}
 
 // ! 항상 프로세싱 커멘드 통해서 호출됨
 // ! 여기서 DEL, Insert등은 "정상적인 범위"를 가정한 체로 작동함
@@ -104,7 +153,8 @@ func (sd *SyncData) modifyNode(n uint, cursorChar int, char rune, modifyCode Mod
 	}
 	if modifyCode == DeleteASCII {
 		cur.PieceTable.DeleteRune(cursorChar)
-	} else {
+	}
+	if modifyCode == InsertASCII {
 		cur.PieceTable.InsertRune(cursorChar, char)
 	}
 

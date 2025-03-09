@@ -1,29 +1,23 @@
 package main
 
 import (
-	"fmt"
 	glp "go_editor/editor/screener/glyph"
 )
 
-const LineHeight = 16 // 한 줄 높이 16픽셀
 type LineBuffer struct {
 	data []uint32
 }
 
 func (sp *SyncProtocol) NewLineBuffer() *LineBuffer {
-	data := make([]uint32, LineHeight*sp.screenWidth)
+	data := make([]uint32, sp.LineHeight*sp.screenWidth)
 	return &LineBuffer{data: data}
 }
 
 // ReflectCursorAt: lineIndex, charIndex
 // cursor.ReflectCursor => lineBuffer 상에 커서 픽셀 덮어쓰기
-func (sp *SyncProtocol) ReflectCursorAt(lineBuffer *LineBuffer, charIndex int) {
-	println("커서 드로우 글자위치", charIndex)
-	// 커서를 라인 내부에 그린다
-	// x => charIndex*glyphWidth, y => (LineHeight-c.height)/2, ...
-	x := charIndex * glp.GlyphWidth
-	y := (LineHeight - sp.cursor.height) / 2
-	sp.cursor.ReflectCursor(sp, lineBuffer, y, x) // lineIndex, row=y, col=x
+func (sp *SyncProtocol) ReflectCursorAt(lineBuffer *LineBuffer, charInset int) {
+	println("커서 드로우 글자위치", charInset)
+	sp.cursor.CoordinateCursor(sp, lineBuffer, charInset) // lineIndex, row=y, col=x
 }
 
 // ClearCursor:
@@ -35,7 +29,7 @@ func (sp *SyncProtocol) ReflectLine(l *LineBuffer, text string) {
 		l.data[i] = sp.bgColor
 	}
 	drawX := 0
-	yOffset := (LineHeight - glp.GlyphHeight) / 2 // 수직 중앙
+	yOffset := (sp.LineHeight - glp.GlyphHeight) / 2 // 수직 중앙
 	for _, ch := range text {
 		glyph, ok := glp.GlyphMap[ch]
 		if !ok {
@@ -47,7 +41,6 @@ func (sp *SyncProtocol) ReflectLine(l *LineBuffer, text string) {
 			break
 		}
 	}
-	fmt.Printf("[SP] ReflectLine: %q\n", text)
 }
 
 // drawGlyphToLine: 한 줄(16*width)의 픽셀에 글리프를 배치
@@ -63,7 +56,7 @@ func (sp *SyncProtocol) drawGlyphToLine(l *LineBuffer, startX, startY int, glyph
 				if px < 0 || px >= sp.screenWidth {
 					continue
 				}
-				if py < 0 || py >= LineHeight {
+				if py < 0 || py >= sp.LineHeight {
 					continue
 				}
 				// index in linePixels = py*width + px
@@ -78,7 +71,7 @@ func (sp *SyncProtocol) drawGlyphToLine(l *LineBuffer, startX, startY int, glyph
 // row in [0..LineHeight-1], col in [0..width-1]
 func (sp *SyncProtocol) setLinePixel(lineBuffer *LineBuffer, row, col int, color uint32) {
 
-	if row < 0 || row >= LineHeight {
+	if row < 0 || row >= sp.LineHeight {
 		return
 	}
 	if col < 0 || col >= sp.screenWidth {
