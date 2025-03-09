@@ -5,7 +5,6 @@ import (
 
 	glp "go_editor/editor/screener/glyph"
 
-	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
 	"github.com/BurntSushi/xgbutil"
 )
@@ -36,6 +35,7 @@ type Screener struct {
 // ReflectCursorAt: lineIndex, charIndex
 // cursor.ReflectCursor => lineBuffer 상에 커서 픽셀 덮어쓰기
 func (s *Screener) ReflectCursorAt(lineIndex, charIndex int) {
+	println("커서 드로우", lineIndex, charIndex)
 	if lineIndex < 0 || lineIndex >= s.lineCount {
 		return
 	}
@@ -52,7 +52,7 @@ func (s *Screener) ClearCursor() {
 }
 
 // NewScreener: XGBUtil을 기반으로 Screener 초기화
-func NewScreener(xu *xgbutil.XUtil, width, height int) (*Screener, error) {
+func NewScreener(xu *xgbutil.XUtil, width, height int, fg, bg uint32) (*Screener, error) {
 	setup := xproto.Setup(xu.Conn())
 	defaultScreen := setup.DefaultScreen(xu.Conn())
 
@@ -109,8 +109,8 @@ func NewScreener(xu *xgbutil.XUtil, width, height int) (*Screener, error) {
 		lineCount:    lineCount,
 		screenLines:  screenLines,
 		screenBuffer: make([]uint32, width*height),
-		fgColor:      0xFF000000,
-		bgColor:      0xFFFFFFFF,
+		fgColor:      fg,
+		bgColor:      bg,
 		textX:        50,
 		textY:        50,
 		xu:           xu,
@@ -180,7 +180,6 @@ func (s *Screener) drawGlyphToLine(linePixels []uint32, startX, startY int, glyp
 
 // Clear: 모든 라인을 bgColor로 초기화
 func (s *Screener) Clear(color uint32) {
-	fmt.Printf("클리어 시작")
 	for i := 0; i < s.lineCount; i++ {
 		linePixels := s.screenLines[i]
 		for px := range linePixels {
@@ -206,16 +205,12 @@ func (s *Screener) setLinePixel(lineIndex, row, col int, color uint32) {
 	s.screenLines[lineIndex][idx] = color
 }
 
-func (s *Screener) WaitForEvent() (xgb.Event, error) {
-	ev, err := s.xu.Conn().WaitForEvent()
-	if err != nil {
-		return nil, err
-	}
-	return ev, nil
-}
+// TODO 여기서부턴 스크리너 고유영역
+// TODO XGB나 XU다루는 순간은 스크리너에서 처리
 
 // FlushBuffer: line기준 => 전체 스크린 버퍼 => X 서버
 func (s *Screener) FlushBuffer() {
+
 	// (1) line들을 하나의 screenBuffer로 합침
 	// lineIndex=0 => y=0..15
 	// lineIndex=1 => y=16..31

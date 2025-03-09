@@ -7,7 +7,7 @@ type Cursor struct {
 	capturedBuffer []uint32
 
 	currentLine, currentY, currentX int
-	visible                             bool
+	visible                         bool
 }
 
 func NewCursor(width, height int, color uint32) *Cursor {
@@ -31,6 +31,7 @@ func (c *Cursor) ReflectCursor(screen *Screener, lineIndex, row, col int) {
 	// 커서 폭*높이만큼 픽셀 덮어쓰기
 	for ry := 0; ry < c.height; ry++ {
 		for cx := 0; cx < c.width; cx++ {
+			//이것도 결국 리플렉트임. 해당 라인버퍼에 그리는 거여서
 			screen.setLinePixel(lineIndex, row+ry, col+cx, c.color)
 		}
 	}

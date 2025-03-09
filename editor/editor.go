@@ -38,7 +38,7 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 		return nil, fmt.Errorf("XGBUtil 연결 실패: %v", err)
 	}
 
-	scr, err := screener.NewScreener(xu, width, height)
+	scr, err := screener.NewScreener(xu, width, height, 0xFF000000, 0xFFFFFFFF)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 
 // Run: 메인 이벤트 루프
 func (e *Editor) Run() {
-	// 이벤트 전용 고루틴: 블로킹 WaitForEvent() → eventChan 로 전달
+
 	e.reflectAll()
 	e.commander.StartListening()
 
@@ -101,6 +101,9 @@ func (e *Editor) processCommand(cmd commander.Command) {
 	case commander.CmdInsert:
 		println("인서트")
 	case commander.CmdMove:
+		//TODO 여기도 결국 지우기.
+		//TODO 커서위치 관리 역시 최종적으론 싱크 프로토콜이 내부적으로 동기화함
+		//TODO e에는 커서 좌표관련 정보가 없게 하기
 		println("무브")
 		if charInput, ok := cmd.Input.(commander.CharInput); ok {
 			switch charInput.Char {
@@ -118,21 +121,15 @@ func (e *Editor) processCommand(cmd commander.Command) {
 		}
 
 	}
-
+	//TODO 사실상 이 밑은 제거 필요
 	e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
 	e.textCount++
 	e.reflectAll()
 }
 
-// min/max 유틸 함수 정의 (Go 1.20 이상이면 math 패키지 사용 가능)
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // reflectAll: 모든 라인을 스크리너에 반영
+// TODO 얘는 추후 제거
+// TODO 커서 관련 로직도 추후 동기화하기
 func (e *Editor) reflectAll() {
 	e.screener.Clear(0xFFFFFFFF)
 

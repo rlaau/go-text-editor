@@ -55,28 +55,172 @@ func NewSyncProtocol(screenWidth, screenHeight int, fg, bg uint32, LineHeight in
 	return sp
 }
 
-// TODO cmd, 커서좌표 받아서 처리 후에
-// TODO 커서 좌표 다시 반환함
-// TODO 우선적으로 커멘드를 인터프리팅 후에 실행하기
-// ex) "\n"들어오면 Slice또는 InsertNode
-// ex) Del이면 legth기반으로 Modify or DelNode
-func (sp *SyncProtocol) ProcessCommand(cmd commander.Command) (int, int) {
-	//TODO 1. 명령 인터프리팅
-	//TODO cmd-> 싱크 코드 및 데이터
-	//TODO 2. 인터프리트 된 명령어 실행 및 싱크 마킹
-	//TODO 이후 1)커서 리턴 2) 싱크 맞추기
-	//TODO 이후 3. 커서까지 싱크 맞추기
-	// 아직 구체 구현 없음
-	return 0, 0
+// ProcessCommand는 에디터에서 최종 호출해서 명령어 처리함
+func (sp *SyncProtocol) ProcessCommand(cmd commander.Command) (
+	isSuccess bool) {
+	opSequences, isSuccess := sp.buildOpSequences(cmd)
+	if !isSuccess {
+		return false
+	}
+	isSuccess2 := sp.interpretOpSequences(opSequences)
+	return isSuccess2
+
+}
+func (sp *SyncProtocol) interpretOpSequences(*opSequences) bool {
+	//TODO Op시퀀스 순회하면서 op코드만 처리하기
+	//TODO 추가적인 어떤 룩업도 필요없이, 그냥 OP수준의 동작만 하면 결과가 보장됨
+	//*여기서부터 시작하기!!!
+	//!!!!!!!!!!!!!!!!!!
+	return true
+
 }
 
-func (sp *SyncProtocol) interpretCommand(cmd commander.Command) opSequence {
-	//TODO 여기선, 시뮬레이팅 후, "정확한 op코드 생성"을 하기
-	//!! 이 함수부터 코딩 시작하기!!!!!!!
-	//!! 적당히 인터프리팅 후에
-	//!! 모든 초안을 여기서 op시퀀시스에 다 저장!!!
-	//!! 이후 프로세스 커멘드에선 해당 op시퀀스에 맞게 작동만 하기!!!
-	return nil
+// interpretCommand는 시퀀스 및 성공여부 리턴턴
+func (sp *SyncProtocol) buildOpSequences(cmd commander.Command) (*opSequences, bool) {
+
+	ops := NewOpSequences()
+	cursorLine, _ := sp.cursor.GetCoordinate()
+	currentNode := sp.syncData.findSyncNodeByLineBuffer(cursorLine)
+	//노드가 있다면 피스테이블은 항상 같이 존재함
+	//그러나 라인버퍼는 존재를 모르므로 항상 주의
+	var opNodeGroup OpNodeGroup
+	var opNodeText OpNodeText
+	var opSync OpNodeSync
+	var opCusror OpNodeCursor
+	textLen := currentNode.PieceTable.Length()
+	switch cmd.Code {
+	case commander.CmdExit:
+		return nil, false
+	case commander.CmdDelete:
+		if textLen == 0 {
+			//텍스트가 0인데 맨 위인 경우
+			//그냥 그대로 둚
+			if currentNode.IsUpperEnd() {
+				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+					OpHoldAllGroup,
+					currentNode,
+					OpHoldRune,
+					rune(' '),
+					OpNodeHoldSync,
+					currentNode)
+				opCusror.opCode = OpHoldCursor
+			} else {
+				//맨 위까진 아녀서 하나 지우고 올라가는 경우
+				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+					OpDeletNodeFromGroup,
+					currentNode,
+					OpHoldRune,
+					rune(' '),
+					OpNodeDeletedSync,
+					currentNode)
+				sp.cursor.currentLineBuffer = currentNode.prev.LineBuffer
+				//커서를 미리 해당 라인으로 한칸 올려 둔 후에 오른쪽 끝으로 옮기기
+				opCusror.opCode = OpRightEndCursor
+			}
+		} else {
+			opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+				OpModifyNodeOnGroup,
+				currentNode,
+				OpDeleteRune,
+				rune(' '),
+				OpNodeModifiedSync,
+				currentNode)
+			opCusror.opCode = OpLeftCursor
+		}
+	case commander.CmdInsert:
+		if charInput, ok := cmd.Input.(commander.CharInput); ok {
+			//엔터키 눌린 경우
+			if charInput.Char == commander.KeyEnter1 || charInput.Char == commander.KeyEnter2 {
+				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+					OpSliceNodeAtGroup,
+					currentNode,
+					OpHoldRune,
+					rune(' '),
+					OpNodeSlicedSync,
+					currentNode)
+				if currentNode.IsDownEnd() {
+					opCusror.opCode = OpHoldCursor
+				} else {
+					opCusror.opCode = OpDownLeftStartCursor
+				}
+			} else {
+				//그냥 문자열 인서트였을 경우
+				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+					OpModifyNodeOnGroup,
+					currentNode,
+					OpInsertRune,
+					charInput.Char,
+					OpNodeModifiedSync,
+					currentNode)
+				opCusror.opCode = OpRightCursor
+			}
+		}
+	case commander.CmdMove:
+		//커서 움직임만 있는 경우 노드 및 데이터의 변경이 존재 x
+		opCusror = sp.buildCursorOp(cmd)
+	}
+	//nil일 경우 알아서 자동으로 추가 안함
+	ops.Append(&opNodeGroup)
+	ops.Append(&opNodeText)
+	ops.Append(&opSync)
+	ops.Append(&opCusror)
+
+	return ops, true
+}
+func (sp *SyncProtocol) buildParitalOpSequence(ngo NodeGroupOp, ngsn *SyncNode,
+	nto NodeTextOp, char rune,
+	so SyncOp, ssn *SyncNode) (OpNodeGroup, OpNodeText, OpNodeSync) {
+	return OpNodeGroup{opCode: ngo, startNode: ngsn},
+		OpNodeText{opCode: nto, char: char},
+		OpNodeSync{opCode: so, startNode: ssn}
+
+}
+
+func (sp *SyncProtocol) buildCursorOp(cmd commander.Command) OpNodeCursor {
+	var opCusror OpNodeCursor
+	cursorLine, charInset := sp.cursor.GetCoordinate()
+	//주의 할 것!! 커서는 항상 라인버퍼에 자신을 동기화함!
+	//그러나 이 경우엔 커서만 움직일 경우 상관 x
+	syncNode := sp.syncData.findSyncNodeByLineBuffer(cursorLine)
+	textLen := syncNode.PieceTable.Length()
+	if charInput, ok := cmd.Input.(commander.CharInput); ok {
+		switch charInput.Char {
+		case commander.KeyUp:
+			if syncNode.IsUpperEnd() {
+				opCusror.opCode = OpHoldCursor
+			} else {
+				opCusror.opCode = OpUpCursor
+			}
+		case commander.KeyDown:
+			if syncNode.IsDownEnd() {
+				opCusror.opCode = OpHoldCursor
+			} else {
+				opCusror.opCode = OpDownCursor
+			}
+		case commander.KeyLeft:
+			if textLen == 0 {
+				if syncNode.IsUpperEnd() {
+					opCusror.opCode = OpHoldCursor
+				} else {
+					opCusror.opCode = OpDownRightEndCursor
+				}
+			} else {
+				opCusror.opCode = OpLeftCursor
+			}
+		case commander.KeyRight:
+			if charInset >= textLen {
+				if syncNode.IsDownEnd() {
+					opCusror.opCode = OpHoldCursor
+				} else {
+					opCusror.opCode = OpDownLeftStartCursor
+				}
+			} else {
+				opCusror.opCode = OpRightCursor
+			}
+		}
+		sp.cursor.visible = true
+	}
+	return opCusror
 }
 
 // TODO ProcessCommand내에서, cmd파싱 후 syncData호출한 후에
@@ -115,6 +259,13 @@ type SyncNode struct {
 
 	prev *SyncNode
 	next *SyncNode
+}
+
+func (sn *SyncNode) IsUpperEnd() bool {
+	return sn.prev == sn || sn.prev == nil
+}
+func (sn *SyncNode) IsDownEnd() bool {
+	return sn.next == sn || sn.next == nil
 }
 
 // 편집 상태 코드 (추후 상세 동기화 시 사용)
@@ -271,4 +422,29 @@ func (sd *SyncData) findNode(n uint) (*SyncNode, bool) {
 	}
 
 	return cur, true
+}
+
+// 그리고, 두 함수를 이 findSyncNode에 위임
+
+func (sd *SyncData) findSyncNodeByLineBuffer(lb *LineBuffer) *SyncNode {
+	return sd.findSyncNode(func(sn *SyncNode) bool {
+		return sn.LineBuffer == lb
+	})
+}
+
+func (sd *SyncData) findSyncNodeByPieceTable(pt *PieceTable) *SyncNode {
+	return sd.findSyncNode(func(sn *SyncNode) bool {
+		return sn.PieceTable == pt
+	})
+}
+
+func (sd *SyncData) findSyncNode(predicate func(*SyncNode) bool) *SyncNode {
+	var found *SyncNode
+	sd.ForEach(func(sn *SyncNode) {
+		// 아직 찾은 게 없고, 조건이 맞으면 found에 할당
+		if found == nil && predicate(sn) {
+			found = sn
+		}
+	})
+	return found
 }

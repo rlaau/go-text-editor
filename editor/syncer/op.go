@@ -62,11 +62,11 @@ func linkTail(tail, seq opSequence) {
 	switch t := tail.(type) {
 	case *OpNodeGroup:
 		t.nextOp = seq
-	case *OpNodeTextOp:
+	case *OpNodeText:
 		t.nextOp = seq
-	case *OpNodeSyncOp:
+	case *OpNodeSync:
 		t.nextOp = seq
-	case *OpNodeCursorOp:
+	case *OpNodeCursor:
 		t.nextOp = seq
 	}
 }
@@ -80,6 +80,13 @@ type opSequence interface {
 	next() opSequence
 }
 
+type opInfo struct {
+	opKind     opKind
+	opCode     int
+	targetNode *SyncNode
+	char       rune
+}
+
 type opKind int
 
 const (
@@ -89,37 +96,31 @@ const (
 	OpKindCursor
 )
 
-type opInfo struct {
-	opKind     opKind
-	opCode     int
-	targetNode *SyncNode
-	char       rune
-}
-
 // -----------------------------------
 // NodeGroup 관련 상수 & 노드
 // -----------------------------------
 type NodeGroupOp int
 
 const (
-	OpInsertNode NodeGroupOp = iota
-	OpDeleteNode
-	OpModifyNode
-	OpHoldNode
+	OpInserNodeToGroup NodeGroupOp = iota
+	OpDeletNodeFromGroup
+	OpSliceNodeAtGroup
+	OpModifyNodeOnGroup
+	OpHoldAllGroup
 )
 
 // OpNodeGroup: opSequence 구현체 (NodeGroup 연산)
 type OpNodeGroup struct {
-	opCode     NodeGroupOp
-	targetNode *SyncNode
-	nextOp     opSequence
+	opCode    NodeGroupOp
+	startNode *SyncNode
+	nextOp    opSequence
 }
 
 func (ng *OpNodeGroup) op() opInfo {
 	return opInfo{
 		opKind:     OpKindNodeGroup,
 		opCode:     int(ng.opCode),
-		targetNode: ng.targetNode,
+		targetNode: ng.startNode,
 		char:       ' ', // NodeGroup에서는 char 사용 안 함
 	}
 }
@@ -138,14 +139,14 @@ const (
 	OpHoldRune
 )
 
-// OpNodeTextOp: opSequence 구현체 (NodeText 연산)
-type OpNodeTextOp struct {
+// OpNodeText: opSequence 구현체 (NodeText 연산)
+type OpNodeText struct {
 	opCode NodeTextOp
 	char   rune
 	nextOp opSequence
 }
 
-func (nt *OpNodeTextOp) op() opInfo {
+func (nt *OpNodeText) op() opInfo {
 	return opInfo{
 		opKind:     OpKindNodeText,
 		opCode:     int(nt.opCode),
@@ -153,7 +154,7 @@ func (nt *OpNodeTextOp) op() opInfo {
 		char:       nt.char,
 	}
 }
-func (nt *OpNodeTextOp) next() opSequence {
+func (nt *OpNodeText) next() opSequence {
 	return nt.nextOp
 }
 
@@ -163,29 +164,29 @@ func (nt *OpNodeTextOp) next() opSequence {
 type SyncOp int
 
 const (
-	OpInsertedSync SyncOp = iota
-	OpSlicedSync
-	OpModifiedSync
-	OpDeletedSync
-	OpHoldSync
+	OpNodeInsertedSync SyncOp = iota
+	OpNodeSlicedSync
+	OpNodeModifiedSync
+	OpNodeDeletedSync
+	OpNodeHoldSync
 )
 
-// OpNodeSyncOp: opSequence 구현체 (Sync 연산)
-type OpNodeSyncOp struct {
-	opCode     SyncOp
-	targetNode *SyncNode
-	nextOp     opSequence
+// OpNodeSync: opSequence 구현체 (Sync 연산)
+type OpNodeSync struct {
+	opCode    SyncOp
+	startNode *SyncNode
+	nextOp    opSequence
 }
 
-func (so *OpNodeSyncOp) op() opInfo {
+func (so *OpNodeSync) op() opInfo {
 	return opInfo{
 		opKind:     OpKindSync,
 		opCode:     int(so.opCode),
-		targetNode: so.targetNode,
+		targetNode: so.startNode,
 		char:       ' ', // SyncOp에서는 char 사용 안 함
 	}
 }
-func (so *OpNodeSyncOp) next() opSequence {
+func (so *OpNodeSync) next() opSequence {
 	return so.nextOp
 }
 
@@ -199,20 +200,22 @@ const (
 	OpDownCursor
 	OpLeftCursor
 	OpRightCursor
-	OpUpEndCursor
-	OpDownEndCursor
+	OpUpLeftStartCursor
+	OpUpRightEndCursor
+	OpDownLeftStartCursor
+	OpDownRightEndCursor
+	OpLeftStartCursor
 	OpRightEndCursor
-	OpLeftEndCursor
 	OpHoldCursor
 )
 
-// OpNodeCursorOp: opSequence 구현체 (Cursor 연산)
-type OpNodeCursorOp struct {
+// OpNodeCursor: opSequence 구현체 (Cursor 연산)
+type OpNodeCursor struct {
 	opCode CursorOp
 	nextOp opSequence
 }
 
-func (co *OpNodeCursorOp) op() opInfo {
+func (co *OpNodeCursor) op() opInfo {
 	return opInfo{
 		opKind:     OpKindCursor,
 		opCode:     int(co.opCode),
@@ -220,6 +223,6 @@ func (co *OpNodeCursorOp) op() opInfo {
 		char:       ' ',
 	}
 }
-func (co *OpNodeCursorOp) next() opSequence {
+func (co *OpNodeCursor) next() opSequence {
 	return co.nextOp
 }
