@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 // -----------------------------------
 // opSequences 구조체
 //   - head: 연결 리스트의 시작 노드
@@ -13,6 +15,27 @@ type opSequences struct {
 
 func NewOpSequences() *opSequences {
 	return &opSequences{}
+}
+
+// [ADDED] ExecuteAll 메서드 예시:
+//
+//	모든 노드를 순회하면서 각 노드의 executeOp()를 실행하는 예시입니다.
+//	필요에 따라 이름과 사용 방식을 조정하세요.
+func (ops *opSequences) ExecuteAll(sp *SyncProtocol) {
+	current := ops.head
+	for current != nil {
+		current.executeOp(sp)
+		current = current.next()
+	}
+}
+
+// ForEach() : 모든 노드를 순회하며, 각 노드의 opInfo를 fn으로 전달
+func (ops *opSequences) ForEach(fn func(info opInfo)) {
+	current := ops.head
+	for current != nil {
+		fn(current.op())
+		current = current.next()
+	}
 }
 
 // Append() : 새로운 opSequence(노드 체인)를 연결 리스트 끝에 붙인다.
@@ -36,15 +59,6 @@ func (ops *opSequences) Append(seq opSequence) {
 	ops.tail = getTail(seq)
 }
 
-// ForEach() : 모든 노드를 순회하며, 각 노드의 opInfo를 fn으로 전달
-func (ops *opSequences) ForEach(fn func(info opInfo)) {
-	current := ops.head
-	for current != nil {
-		fn(current.op())
-		current = current.next()
-	}
-}
-
 // getTail() : 전달받은 시퀀스(seq)의 마지막 노드를 찾아 반환
 func getTail(start opSequence) opSequence {
 	cur := start
@@ -64,9 +78,9 @@ func linkTail(tail, seq opSequence) {
 		t.nextOp = seq
 	case *OpNodeText:
 		t.nextOp = seq
-	case *OpNodeSync:
+	case *OpSync:
 		t.nextOp = seq
-	case *OpNodeCursor:
+	case *OpCursor:
 		t.nextOp = seq
 	}
 }
@@ -78,6 +92,7 @@ func linkTail(tail, seq opSequence) {
 type opSequence interface {
 	op() opInfo
 	next() opSequence
+	executeOp(*SyncProtocol)
 }
 
 type opInfo struct {
@@ -99,10 +114,10 @@ const (
 // -----------------------------------
 // NodeGroup 관련 상수 & 노드
 // -----------------------------------
-type NodeGroupOp int
+type NodeGroupOpCode int
 
 const (
-	OpInserNodeToGroup NodeGroupOp = iota
+	OpInserNodeToGroup NodeGroupOpCode = iota
 	OpDeletNodeFromGroup
 	OpSliceNodeAtGroup
 	OpModifyNodeOnGroup
@@ -111,7 +126,7 @@ const (
 
 // OpNodeGroup: opSequence 구현체 (NodeGroup 연산)
 type OpNodeGroup struct {
-	opCode    NodeGroupOp
+	opCode    NodeGroupOpCode
 	startNode *SyncNode
 	nextOp    opSequence
 }
@@ -125,23 +140,57 @@ func (ng *OpNodeGroup) op() opInfo {
 	}
 }
 func (ng *OpNodeGroup) next() opSequence {
+
+	if ng.nextOp == nil {
+		return nil
+	}
 	return ng.nextOp
+}
+
+// [ADDED] executeOp(): opCode에 따른 실제 동작을 switch로 분기
+func (ng *OpNodeGroup) executeOp(sp *SyncProtocol) {
+	switch ng.opCode {
+	case OpInserNodeToGroup:
+		// TODO InsertNodeToGroup 동작
+		//!!!!!!!!!!!인식은 제대로 함. 이제 이 부분들만 신경쓰자!!!!!!!!!!!!!!!!!1
+		fmt.Println("NodeGroup -> InsertNodeToGroup 실행")
+	case OpDeletNodeFromGroup:
+		// TODO DeleteNodeFromGroup 동작
+		fmt.Println("NodeGroup -> DeleteNodeFromGroup 실행")
+	case OpSliceNodeAtGroup:
+		// TODO SliceNodeAtGroup 동작
+		fmt.Println("NodeGroup -> SliceNodeAtGroup 실행")
+	case OpModifyNodeOnGroup:
+		// TODO ModifyNodeOnGroup 동작
+		fmt.Println("NodeGroup -> ModifyNodeOnGroup 실행")
+	case OpHoldAllGroup:
+		// TODO HoldAllGroup 동작
+		fmt.Println("NodeGroup -> HoldAllGroup 실행")
+	default:
+		fmt.Println("NodeGroup -> 알 수 없는 opCode")
+	}
+}
+func NewOpNodeGroup(code NodeGroupOpCode, target *SyncNode) *OpNodeGroup {
+	return &OpNodeGroup{
+		opCode:    code,
+		startNode: target,
+	}
 }
 
 // -----------------------------------
 // NodeText 관련 상수 & 노드
 // -----------------------------------
-type NodeTextOp int
+type NodeTextOpCode int
 
 const (
-	OpInsertRune NodeTextOp = iota
+	OpInsertRune NodeTextOpCode = iota
 	OpDeleteRune
 	OpHoldRune
 )
 
 // OpNodeText: opSequence 구현체 (NodeText 연산)
 type OpNodeText struct {
-	opCode NodeTextOp
+	opCode NodeTextOpCode
 	char   rune
 	nextOp opSequence
 }
@@ -155,48 +204,104 @@ func (nt *OpNodeText) op() opInfo {
 	}
 }
 func (nt *OpNodeText) next() opSequence {
+	if nt.nextOp == nil {
+		return nil
+	}
 	return nt.nextOp
 }
 
+// [ADDED] executeOp()
+func (nt *OpNodeText) executeOp(sp *SyncProtocol) {
+	switch nt.opCode {
+	case OpInsertRune:
+		fmt.Printf("NodeText -> InsertRune(%c)\n", nt.char)
+	case OpDeleteRune:
+		fmt.Printf("NodeText -> DeleteRune(%c)\n", nt.char)
+	case OpHoldRune:
+		fmt.Printf("NodeText -> HoldRune(%c)\n", nt.char)
+	default:
+		fmt.Println("NodeText -> 알 수 없는 opCode")
+	}
+}
+
+// [ADDED] 생성자: opCode->실행함수 매핑 주입
+func NewOpNodeText(code NodeTextOpCode, ch rune) *OpNodeText {
+	return &OpNodeText{
+		opCode: code,
+		char:   ch,
+	}
+}
+
 // -----------------------------------
-// SyncOp 관련 상수 & 노드
+// SyncOpCode 관련 상수 & 노드
 // -----------------------------------
-type SyncOp int
+type SyncOpCode int
 
 const (
-	OpNodeInsertedSync SyncOp = iota
+	OpNodeInsertedSync SyncOpCode = iota
 	OpNodeSlicedSync
 	OpNodeModifiedSync
 	OpNodeDeletedSync
 	OpNodeHoldSync
 )
 
-// OpNodeSync: opSequence 구현체 (Sync 연산)
-type OpNodeSync struct {
-	opCode    SyncOp
+// OpSync: opSequence 구현체 (Sync 연산)
+type OpSync struct {
+	opCode    SyncOpCode
 	startNode *SyncNode
-	nextOp    opSequence
+
+	nextOp opSequence
 }
 
-func (so *OpNodeSync) op() opInfo {
+func (so *OpSync) op() opInfo {
 	return opInfo{
-		opKind:     OpKindSync,
-		opCode:     int(so.opCode),
+		opKind: OpKindSync,
+		opCode: int(so.opCode),
+
 		targetNode: so.startNode,
 		char:       ' ', // SyncOp에서는 char 사용 안 함
 	}
 }
-func (so *OpNodeSync) next() opSequence {
+func (so *OpSync) next() opSequence {
+	if so.nextOp == nil {
+		return nil
+	}
 	return so.nextOp
 }
 
+// [ADDED] executeOp()
+func (so *OpSync) executeOp(sp *SyncProtocol) {
+	switch so.opCode {
+	case OpNodeInsertedSync:
+		fmt.Println("Sync -> NodeInsertedSync 실행")
+	case OpNodeSlicedSync:
+		fmt.Println("Sync -> NodeSlicedSync 실행")
+	case OpNodeModifiedSync:
+		fmt.Println("Sync -> NodeModifiedSync 실행")
+	case OpNodeDeletedSync:
+		fmt.Println("Sync -> NodeDeletedSync 실행")
+	case OpNodeHoldSync:
+		fmt.Println("Sync -> NodeHoldSync 실행")
+	default:
+		fmt.Println("Sync -> 알 수 없는 opCode")
+	}
+}
+
+// [ADDED] 생성자: opCode->실행함수 매핑 주입
+func NewOpNodeSync(code SyncOpCode, target *SyncNode) *OpSync {
+	return &OpSync{
+		opCode:    code,
+		startNode: target,
+	}
+}
+
 // -----------------------------------
-// CursorOp 관련 상수 & 노드
+// CursorOpCode 관련 상수 & 노드
 // -----------------------------------
-type CursorOp int
+type CursorOpCode int
 
 const (
-	OpUpCursor CursorOp = iota
+	OpUpCursor CursorOpCode = iota
 	OpDownCursor
 	OpLeftCursor
 	OpRightCursor
@@ -209,20 +314,62 @@ const (
 	OpHoldCursor
 )
 
-// OpNodeCursor: opSequence 구현체 (Cursor 연산)
-type OpNodeCursor struct {
-	opCode CursorOp
+// OpCursor: opSequence 구현체 (Cursor 연산)
+type OpCursor struct {
+	opCode CursorOpCode
+
 	nextOp opSequence
 }
 
-func (co *OpNodeCursor) op() opInfo {
+func (co *OpCursor) op() opInfo {
 	return opInfo{
-		opKind:     OpKindCursor,
-		opCode:     int(co.opCode),
+		opKind: OpKindCursor,
+		opCode: int(co.opCode),
+
 		targetNode: nil, // 커서 이동이니 targetNode는 사용 안 함
 		char:       ' ',
 	}
 }
-func (co *OpNodeCursor) next() opSequence {
+func (co *OpCursor) next() opSequence {
+	if co.nextOp == nil {
+		return nil
+	}
 	return co.nextOp
+}
+
+// [ADDED] executeOp()
+func (co *OpCursor) executeOp(sp *SyncProtocol) {
+	switch co.opCode {
+	case OpUpCursor:
+		fmt.Println("Cursor -> UpCursor 실행")
+	case OpDownCursor:
+		fmt.Println("Cursor -> DownCursor 실행")
+	case OpLeftCursor:
+		fmt.Println("Cursor -> LeftCursor 실행")
+	case OpRightCursor:
+		fmt.Println("Cursor -> RightCursor 실행")
+	case OpUpLeftStartCursor:
+		fmt.Println("Cursor -> UpLeftStartCursor 실행")
+	case OpUpRightEndCursor:
+		fmt.Println("Cursor -> UpRightEndCursor 실행")
+	case OpDownLeftStartCursor:
+		fmt.Println("Cursor -> DownLeftStartCursor 실행")
+	case OpDownRightEndCursor:
+		fmt.Println("Cursor -> DownRightEndCursor 실행")
+	case OpLeftStartCursor:
+		fmt.Println("Cursor -> LeftStartCursor 실행")
+	case OpRightEndCursor:
+		fmt.Println("Cursor -> RightEndCursor 실행")
+	case OpHoldCursor:
+		fmt.Println("Cursor -> HoldCursor 실행")
+	default:
+		fmt.Println("Cursor -> 알 수 없는 opCode")
+	}
+}
+
+// [ADDED] 생성자: opCode->실행함수 매핑 주입
+func NewOpNodeCursor(code CursorOpCode) *OpCursor {
+	return &OpCursor{
+		opCode: code,
+	}
 }

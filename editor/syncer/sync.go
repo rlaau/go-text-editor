@@ -57,20 +57,13 @@ func NewSyncProtocol(screenWidth, screenHeight int, fg, bg uint32, LineHeight in
 
 // ProcessCommand는 에디터에서 최종 호출해서 명령어 처리함
 func (sp *SyncProtocol) ProcessCommand(cmd commander.Command) (
-	isSuccess bool) {
-	opSequences, isSuccess := sp.buildOpSequences(cmd)
-	if !isSuccess {
+	isContinue bool) {
+	opSequences, isContinue := sp.buildOpSequences(cmd)
+	if !isContinue {
 		return false
 	}
-	isSuccess2 := sp.interpretOpSequences(opSequences)
-	return isSuccess2
 
-}
-func (sp *SyncProtocol) interpretOpSequences(*opSequences) bool {
-	//TODO Op시퀀스 순회하면서 op코드만 처리하기
-	//TODO 추가적인 어떤 룩업도 필요없이, 그냥 OP수준의 동작만 하면 결과가 보장됨
-	//*여기서부터 시작하기!!!
-	//!!!!!!!!!!!!!!!!!!
+	opSequences.ExecuteAll(sp)
 	return true
 
 }
@@ -83,10 +76,10 @@ func (sp *SyncProtocol) buildOpSequences(cmd commander.Command) (*opSequences, b
 	currentNode := sp.syncData.findSyncNodeByLineBuffer(cursorLine)
 	//노드가 있다면 피스테이블은 항상 같이 존재함
 	//그러나 라인버퍼는 존재를 모르므로 항상 주의
-	var opNodeGroup OpNodeGroup
-	var opNodeText OpNodeText
-	var opSync OpNodeSync
-	var opCusror OpNodeCursor
+	var opNodeGroup *OpNodeGroup
+	var opNodeText *OpNodeText
+	var opSync *OpSync
+	var opCusror *OpCursor
 	textLen := currentNode.PieceTable.Length()
 	switch cmd.Code {
 	case commander.CmdExit:
@@ -96,88 +89,103 @@ func (sp *SyncProtocol) buildOpSequences(cmd commander.Command) (*opSequences, b
 			//텍스트가 0인데 맨 위인 경우
 			//그냥 그대로 둚
 			if currentNode.IsUpperEnd() {
-				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 					OpHoldAllGroup,
 					currentNode,
 					OpHoldRune,
 					rune(' '),
 					OpNodeHoldSync,
-					currentNode)
-				opCusror.opCode = OpHoldCursor
+					currentNode,
+					OpHoldCursor)
 			} else {
+				//커서를 미리 해당 라인으로 한칸 올려 둔 후에 오른쪽 끝으로 옮기기
+				sp.cursor.currentLineBuffer = currentNode.prev.LineBuffer
 				//맨 위까진 아녀서 하나 지우고 올라가는 경우
-				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 					OpDeletNodeFromGroup,
 					currentNode,
 					OpHoldRune,
 					rune(' '),
 					OpNodeDeletedSync,
-					currentNode)
-				sp.cursor.currentLineBuffer = currentNode.prev.LineBuffer
-				//커서를 미리 해당 라인으로 한칸 올려 둔 후에 오른쪽 끝으로 옮기기
-				opCusror.opCode = OpRightEndCursor
+					currentNode,
+					OpRightEndCursor)
+
 			}
 		} else {
-			opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+			opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 				OpModifyNodeOnGroup,
 				currentNode,
 				OpDeleteRune,
 				rune(' '),
 				OpNodeModifiedSync,
-				currentNode)
-			opCusror.opCode = OpLeftCursor
+				currentNode,
+				OpLeftCursor,
+			)
 		}
 	case commander.CmdInsert:
 		if charInput, ok := cmd.Input.(commander.CharInput); ok {
+			var co CursorOpCode
+			if currentNode.IsDownEnd() {
+				co = OpHoldCursor
+			} else {
+				co = OpDownLeftStartCursor
+			}
 			//엔터키 눌린 경우
 			if charInput.Char == commander.KeyEnter1 || charInput.Char == commander.KeyEnter2 {
-				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 					OpSliceNodeAtGroup,
 					currentNode,
 					OpHoldRune,
 					rune(' '),
 					OpNodeSlicedSync,
-					currentNode)
-				if currentNode.IsDownEnd() {
-					opCusror.opCode = OpHoldCursor
-				} else {
-					opCusror.opCode = OpDownLeftStartCursor
-				}
+					currentNode,
+					co)
 			} else {
 				//그냥 문자열 인서트였을 경우
-				opNodeGroup, opNodeText, opSync = sp.buildParitalOpSequence(
+				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 					OpModifyNodeOnGroup,
 					currentNode,
 					OpInsertRune,
 					charInput.Char,
 					OpNodeModifiedSync,
-					currentNode)
-				opCusror.opCode = OpRightCursor
+					currentNode,
+					OpRightCursor,
+				)
+
 			}
 		}
 	case commander.CmdMove:
 		//커서 움직임만 있는 경우 노드 및 데이터의 변경이 존재 x
 		opCusror = sp.buildCursorOp(cmd)
 	}
-	//nil일 경우 알아서 자동으로 추가 안함
-	ops.Append(&opNodeGroup)
-	ops.Append(&opNodeText)
-	ops.Append(&opSync)
-	ops.Append(&opCusror)
 
+	if opNodeGroup != nil {
+		ops.Append(opNodeGroup)
+	}
+	if opNodeText != nil {
+		ops.Append(opNodeText)
+	}
+	if opSync != nil {
+		ops.Append(opSync)
+	}
+	if opCusror != nil {
+		ops.Append(opCusror)
+	}
 	return ops, true
 }
-func (sp *SyncProtocol) buildParitalOpSequence(ngo NodeGroupOp, ngsn *SyncNode,
-	nto NodeTextOp, char rune,
-	so SyncOp, ssn *SyncNode) (OpNodeGroup, OpNodeText, OpNodeSync) {
-	return OpNodeGroup{opCode: ngo, startNode: ngsn},
-		OpNodeText{opCode: nto, char: char},
-		OpNodeSync{opCode: so, startNode: ssn}
+func (sp *SyncProtocol) buildTotalOpSequence(ngo NodeGroupOpCode, ngsn *SyncNode,
+	nto NodeTextOpCode, char rune,
+	so SyncOpCode, ssn *SyncNode,
+	cursorOp CursorOpCode) (*OpNodeGroup, *OpNodeText, *OpSync, *OpCursor) {
+	return NewOpNodeGroup(ngo, ngsn),
+		NewOpNodeText(nto, char),
+		NewOpNodeSync(so, ssn),
+		NewOpNodeCursor(cursorOp)
 
 }
 
-func (sp *SyncProtocol) buildCursorOp(cmd commander.Command) OpNodeCursor {
-	var opCusror OpNodeCursor
+func (sp *SyncProtocol) buildCursorOp(cmd commander.Command) *OpCursor {
+	var opCursorCode CursorOpCode
 	cursorLine, charInset := sp.cursor.GetCoordinate()
 	//주의 할 것!! 커서는 항상 라인버퍼에 자신을 동기화함!
 	//그러나 이 경우엔 커서만 움직일 경우 상관 x
@@ -187,50 +195,40 @@ func (sp *SyncProtocol) buildCursorOp(cmd commander.Command) OpNodeCursor {
 		switch charInput.Char {
 		case commander.KeyUp:
 			if syncNode.IsUpperEnd() {
-				opCusror.opCode = OpHoldCursor
+				opCursorCode = OpHoldCursor
 			} else {
-				opCusror.opCode = OpUpCursor
+				opCursorCode = OpUpCursor
 			}
 		case commander.KeyDown:
 			if syncNode.IsDownEnd() {
-				opCusror.opCode = OpHoldCursor
+				opCursorCode = OpHoldCursor
 			} else {
-				opCusror.opCode = OpDownCursor
+				opCursorCode = OpDownCursor
 			}
 		case commander.KeyLeft:
 			if textLen == 0 {
 				if syncNode.IsUpperEnd() {
-					opCusror.opCode = OpHoldCursor
+					opCursorCode = OpHoldCursor
 				} else {
-					opCusror.opCode = OpDownRightEndCursor
+					opCursorCode = OpDownRightEndCursor
 				}
 			} else {
-				opCusror.opCode = OpLeftCursor
+				opCursorCode = OpLeftCursor
 			}
 		case commander.KeyRight:
 			if charInset >= textLen {
 				if syncNode.IsDownEnd() {
-					opCusror.opCode = OpHoldCursor
+					opCursorCode = OpHoldCursor
 				} else {
-					opCusror.opCode = OpDownLeftStartCursor
+					opCursorCode = OpDownLeftStartCursor
 				}
 			} else {
-				opCusror.opCode = OpRightCursor
+				opCursorCode = OpRightCursor
 			}
 		}
-		sp.cursor.visible = true
 	}
-	return opCusror
-}
-
-// TODO ProcessCommand내에서, cmd파싱 후 syncData호출한 후에
-// TODO 어느 노드에, 어떤 변경 했는지를 싱크프로토콜에 기록
-func (sp *SyncProtocol) markSync() {}
-
-// TODO 싱크마크 바탕으로, 해당 노드 찾아가서 피스테이블에 flatted 호출 후 싱크 맞추기
-// TODO 라인버퍼 nil 검증 후 아예 NewLineBuffer를 호출 후에 새로 하기
-func (sp *SyncProtocol) resolveSync() {
-
+	sp.cursor.visible = true
+	return NewOpNodeCursor(opCursorCode)
 }
 
 func (sp *SyncProtocol) syncNode(sn *SyncNode) {
