@@ -23,6 +23,14 @@ type Command struct {
 // CommandCode: 명령 코드
 type CommandCode uint8
 
+const (
+	CmdMove CommandCode = iota
+	CmdAppend
+	CmdInsert
+	CmdDelete
+	CmdExit
+)
+
 // CommandInput 인터페이스
 type CommandInput interface {
 	IsCommandInput()
@@ -41,14 +49,6 @@ type ClickInput struct {
 }
 
 func (c ClickInput) IsCommandInput() {}
-
-const (
-	CmdMove CommandCode = iota
-	CmdAppend
-	CmdInsert
-	CmdDelete
-	CmdExit
-)
 
 // X11 KeySym 상수 정의 (X11/keysymdef.h 참고)
 const (

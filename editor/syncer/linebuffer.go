@@ -9,7 +9,9 @@ type LineBuffer struct {
 }
 
 func (sp *SyncProtocol) NewLineBuffer() *LineBuffer {
+
 	data := make([]uint32, sp.LineHeight*sp.screenWidth)
+
 	return &LineBuffer{data: data}
 }
 

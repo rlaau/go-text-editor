@@ -17,9 +17,9 @@ func main() {
 	// 첫 번째 노드: "hello"
 	sp.syncData.insertNode(0, "hello")
 	// 두 번째 노드: "world"
-	sp.syncData.insertNode(1, "world")
+	sp.syncData.insertNode(0, "world")
 	// 두 번째 노드의 PieceTable에 'w' 추가 예시
-	sp.syncData.modifyNode(1, 1, rune('w'), InsertASCII)
+	sp.syncData.modifyNode(1, 1, rune('t'), InsertASCII)
 
 	fmt.Println("== 초기 리스트 ==")
 	printList(sp.syncData.head)
@@ -52,6 +52,12 @@ func main() {
 	// -----------------------------------------------------
 	fmt.Println("\n== Command Processing Test ==")
 
+	//우선은 0,0좌표 시작으로 강제
+	//TODO 이 두 줄의 커서로직을 추후 어캐처리할진 생각해보기
+	//TODO 우선은 0,0스타트 강제 위해서 이렇게 하는 중인데 (위의 로직이 너무 강제적이라서)
+	//TODO 일반적인 에디터 러닝에선 이런 강제 필요할지 생각해보고 지울지 결정.
+	sp.cursor.currentLineBuffer = sp.syncData.head.LineBuffer
+	sp.cursor.currentCharInset = 0
 	// 예시로 8개 명령어 준비 (각 케이스당 2개씩)
 	testCommands := []commander.Command{
 		// 1) "마우스무브(CmdMove)" - 실제 구현은 화살표 이동으로 처리
@@ -74,7 +80,7 @@ func main() {
 	println()
 	for i, cmd := range testCommands {
 		fmt.Printf("[Command #%d] -> Code=%v, Input=%v\n", i, cmd.Code, cmd.Input)
-
+		fmt.Printf("CursorLine %d, CursorInset %d \n", sp.syncData.findOrder(sp.syncData.findSyncNodeByLineBuffer(sp.cursor.currentLineBuffer)), sp.cursor.currentCharInset)
 		isContinue := sp.ProcessCommand(cmd)
 		fmt.Printf("   Processed => isContinue=%v\n", isContinue)
 
@@ -98,7 +104,11 @@ func printList(head *SyncNode) {
 			println("빈 텍스트 발견- 종료")
 			return
 		}
-		fmt.Printf(" Node[%d]: %q\n", i, cur.PieceTable.String())
+		f := false
+		if cur.LineBuffer == nil {
+			f = true
+		}
+		fmt.Printf(" Node[%d]: %q void: %v\n", i, cur.PieceTable.String(), f)
 		cur = cur.next
 		i++
 	}

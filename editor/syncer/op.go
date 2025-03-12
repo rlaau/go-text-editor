@@ -121,6 +121,7 @@ const (
 	OpDeletNodeFromGroup
 	OpSliceNodeAtGroup
 	OpModifyNodeOnGroup
+	OpMergeNodesInGroup
 	OpHoldAllGroup
 )
 
@@ -149,22 +150,28 @@ func (ng *OpNodeGroup) next() opSequence {
 
 // [ADDED] executeOp(): opCode에 따른 실제 동작을 switch로 분기
 func (ng *OpNodeGroup) executeOp(sp *SyncProtocol) {
+	sd := sp.syncData
+	_, charInset := sp.cursor.GetCoordinate()
+
 	switch ng.opCode {
 	case OpInserNodeToGroup:
-		// TODO InsertNodeToGroup 동작
-		//!!!!!!!!!!!인식은 제대로 함. 이제 이 부분들만 신경쓰자!!!!!!!!!!!!!!!!!1
 		fmt.Println("NodeGroup -> InsertNodeToGroup 실행")
+		sd.insertByPtr(ng.startNode, string(""))
 	case OpDeletNodeFromGroup:
-		// TODO DeleteNodeFromGroup 동작
 		fmt.Println("NodeGroup -> DeleteNodeFromGroup 실행")
+		sd.deleteByPtr(ng.startNode)
 	case OpSliceNodeAtGroup:
-		// TODO SliceNodeAtGroup 동작
 		fmt.Println("NodeGroup -> SliceNodeAtGroup 실행")
+		println("시작 노드 번호", sp.syncData.findOrder(ng.startNode))
+		sd.sliceByPtr(ng.startNode, uint(charInset))
+	case OpMergeNodesInGroup:
+		fmt.Println("NodeGroup -> MergeNodesInGroup 실행")
+		sd.mergeNodeByPtr(ng.startNode, ng.startNode.next)
 	case OpModifyNodeOnGroup:
-		// TODO ModifyNodeOnGroup 동작
 		fmt.Println("NodeGroup -> ModifyNodeOnGroup 실행")
+		//여기선 일단 홀딩
 	case OpHoldAllGroup:
-		// TODO HoldAllGroup 동작
+		//여기도 일단 홀드
 		fmt.Println("NodeGroup -> HoldAllGroup 실행")
 	default:
 		fmt.Println("NodeGroup -> 알 수 없는 opCode")
@@ -212,11 +219,17 @@ func (nt *OpNodeText) next() opSequence {
 
 // [ADDED] executeOp()
 func (nt *OpNodeText) executeOp(sp *SyncProtocol) {
+	lineBuffer, charInset := sp.cursor.GetCoordinate()
+	syncNode := sp.syncData.findSyncNodeByLineBuffer(lineBuffer)
 	switch nt.opCode {
 	case OpInsertRune:
 		fmt.Printf("NodeText -> InsertRune(%c)\n", nt.char)
+		syncNode.PieceTable.InsertRune(charInset, nt.char)
 	case OpDeleteRune:
 		fmt.Printf("NodeText -> DeleteRune(%c)\n", nt.char)
+		//여기선 최대한 간결한 동장을 지향함
+		// 가드클로스는 빌딩때 다 처리
+		syncNode.PieceTable.DeleteRune(charInset)
 	case OpHoldRune:
 		fmt.Printf("NodeText -> HoldRune(%c)\n", nt.char)
 	default:
@@ -274,12 +287,27 @@ func (so *OpSync) executeOp(sp *SyncProtocol) {
 	switch so.opCode {
 	case OpNodeInsertedSync:
 		fmt.Println("Sync -> NodeInsertedSync 실행")
+		//스타트와 스타트의 prev (단 prev는 nil일수도 있다.)
+		prevNode := so.startNode.prev
+		if prevNode != nil {
+			sp.syncNode(prevNode)
+		}
+		sp.syncNode(so.startNode)
 	case OpNodeSlicedSync:
 		fmt.Println("Sync -> NodeSlicedSync 실행")
+		//스타트와 스타트의 next (이 경우엔 둘다 반드시 존재.)
+		nextNode := so.startNode.prev
+		if nextNode != nil {
+			sp.syncNode(nextNode)
+		}
+		sp.syncNode(so.startNode)
 	case OpNodeModifiedSync:
 		fmt.Println("Sync -> NodeModifiedSync 실행")
+		//하나만 싱크
+		sp.syncNode(so.startNode)
 	case OpNodeDeletedSync:
 		fmt.Println("Sync -> NodeDeletedSync 실행")
+		//일단 암것도 안함
 	case OpNodeHoldSync:
 		fmt.Println("Sync -> NodeHoldSync 실행")
 	default:
@@ -339,27 +367,62 @@ func (co *OpCursor) next() opSequence {
 
 // [ADDED] executeOp()
 func (co *OpCursor) executeOp(sp *SyncProtocol) {
+	c := sp.cursor
+	cuerrentLine, currentCharInset := c.GetCoordinate()
+	currentNode := sp.syncData.findSyncNodeByLineBuffer(cuerrentLine)
 	switch co.opCode {
 	case OpUpCursor:
 		fmt.Println("Cursor -> UpCursor 실행")
+		// 가드 클로스는 빌딩때 처리함
+		//라인만 한칸 이동
+		prevNode := currentNode.prev
+		c.currentLineBuffer = prevNode.LineBuffer
+		// 라인 길이를 최대로 삼음
+		maxInset := max(currentCharInset, prevNode.PieceTable.Length())
+		c.currentCharInset = maxInset
 	case OpDownCursor:
 		fmt.Println("Cursor -> DownCursor 실행")
+		// 가드 클로스는 빌딩때 처리함
+		//라인만 한칸 이동
+		nextNode := currentNode.next
+		c.currentLineBuffer = nextNode.LineBuffer
+		// 라인 길이를 최대로 삼음
+		maxInset := max(currentCharInset, nextNode.PieceTable.Length())
+		c.currentCharInset = maxInset
 	case OpLeftCursor:
 		fmt.Println("Cursor -> LeftCursor 실행")
+		// 가드 클로스는 빌딩때 처리함
+		c.currentCharInset = max(c.currentCharInset-1, 0)
 	case OpRightCursor:
 		fmt.Println("Cursor -> RightCursor 실행")
+		// 가드 클로스는 빌딩때 처리함
+		c.currentCharInset += 1
 	case OpUpLeftStartCursor:
 		fmt.Println("Cursor -> UpLeftStartCursor 실행")
+		prevNode := currentNode.prev
+		c.currentLineBuffer = prevNode.LineBuffer
+		c.currentCharInset = 0
 	case OpUpRightEndCursor:
 		fmt.Println("Cursor -> UpRightEndCursor 실행")
+		prevNode := currentNode.prev
+		c.currentLineBuffer = prevNode.LineBuffer
+		c.currentCharInset = prevNode.PieceTable.Length()
 	case OpDownLeftStartCursor:
 		fmt.Println("Cursor -> DownLeftStartCursor 실행")
+		nextNode := currentNode.next
+		c.currentLineBuffer = nextNode.LineBuffer
+		c.currentCharInset = 0
 	case OpDownRightEndCursor:
 		fmt.Println("Cursor -> DownRightEndCursor 실행")
+		nextNode := currentNode.next
+		c.currentLineBuffer = nextNode.LineBuffer
+		c.currentCharInset = nextNode.PieceTable.Length()
 	case OpLeftStartCursor:
 		fmt.Println("Cursor -> LeftStartCursor 실행")
+		c.currentCharInset = 0
 	case OpRightEndCursor:
 		fmt.Println("Cursor -> RightEndCursor 실행")
+		c.currentCharInset = currentNode.PieceTable.Length()
 	case OpHoldCursor:
 		fmt.Println("Cursor -> HoldCursor 실행")
 	default:

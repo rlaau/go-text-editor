@@ -91,7 +91,7 @@ func (pt *PieceTable) findPieceAtRuneIndex(index int) (pieceIndex int, internalO
 // 주어진 index 위치에 newText를 삽입한다.
 // 예) "hello"에서 Insert(0, "k") → "khello"
 //
-//	"hello"에서 Insert(2, "X") → "heXllo"
+//	"hello"에서 Insert(2, "X") → "heXllo" (앞에 삽입)
 func (pt *PieceTable) Insert(index int, newText string) {
 	// 여기서는 realOffset을 index 그대로 사용 (zero-based)
 	realOffset := index

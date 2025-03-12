@@ -48,10 +48,17 @@ func NewSyncProtocol(screenWidth, screenHeight int, fg, bg uint32, LineHeight in
 		changedNode:   nil,
 		cursor:        NewCursor(2, glp.GlyphHeight, 0xFF000000),
 	}
+
 	//여기서 워킹 통해서 각 노드마다 싱크 맞춰줌
 	syncData.ForEach(func(sn *SyncNode) {
 		sp.syncNode(sn)
+
 	})
+
+	//커서 위치 0,0으로 이동
+	sp.cursor.currentLineBuffer = sp.syncData.head.LineBuffer
+	sp.cursor.currentCharInset = 0
+	println("lineCount", lineCount, "만큼 초기화")
 	return sp
 }
 
@@ -74,6 +81,7 @@ func (sp *SyncProtocol) buildOpSequences(cmd commander.Command) (*opSequences, b
 	ops := NewOpSequences()
 	cursorLine, _ := sp.cursor.GetCoordinate()
 	currentNode := sp.syncData.findSyncNodeByLineBuffer(cursorLine)
+
 	//노드가 있다면 피스테이블은 항상 같이 존재함
 	//그러나 라인버퍼는 존재를 모르므로 항상 주의
 	var opNodeGroup *OpNodeGroup
@@ -111,6 +119,34 @@ func (sp *SyncProtocol) buildOpSequences(cmd commander.Command) (*opSequences, b
 					OpRightEndCursor)
 
 			}
+		} else if sp.cursor.currentCharInset == 0 {
+			//딜리트를 했는데 그게 맨 시작인 경우
+			if currentNode.IsUpperEnd() {
+				//아무것도 안하기
+				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
+					OpHoldAllGroup,
+					currentNode,
+					OpHoldRune,
+					rune(' '),
+					OpNodeHoldSync,
+					currentNode,
+					OpHoldCursor)
+			} else {
+				prevNode := currentNode.prev
+				//미리 위로 한칸 올라가기. 글고 위치 자체를 미리 지정
+				sp.cursor.currentLineBuffer = prevNode.LineBuffer
+				sp.cursor.currentCharInset = prevNode.PieceTable.Length()
+				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
+					OpMergeNodesInGroup,
+					prevNode,
+					OpHoldRune,
+					rune(' '),
+					OpNodeModifiedSync,
+					prevNode,
+					OpHoldCursor,
+				)
+			}
+
 		} else {
 			opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 				OpModifyNodeOnGroup,
@@ -132,6 +168,7 @@ func (sp *SyncProtocol) buildOpSequences(cmd commander.Command) (*opSequences, b
 			}
 			//엔터키 눌린 경우
 			if charInput.Char == commander.KeyEnter1 || charInput.Char == commander.KeyEnter2 {
+
 				opNodeGroup, opNodeText, opSync, opCusror = sp.buildTotalOpSequence(
 					OpSliceNodeAtGroup,
 					currentNode,
@@ -232,12 +269,21 @@ func (sp *SyncProtocol) buildCursorOp(cmd commander.Command) *OpCursor {
 }
 
 func (sp *SyncProtocol) syncNode(sn *SyncNode) {
+	//TODO 추후 반드시 커서의 위치는 라인버퍼가 아닌 싱크노드로 하기!!!!!!
+	//TODO 반드시!!!!!!!!!!!!!!!!!
 	str := sn.PieceTable.String()
-	lineBuffer := sn.LineBuffer
-	if lineBuffer == nil {
-		lineBuffer = sp.NewLineBuffer()
+	if sn.LineBuffer == nil {
+		needToMove := false
+		if sn == sp.syncData.findSyncNodeByLineBuffer(sp.cursor.currentLineBuffer) {
+			needToMove = true
+		}
+		sn.LineBuffer = sp.NewLineBuffer() // LineBuffer를 생성하고 SyncNode에 설정
+		if needToMove {
+			sp.cursor.currentLineBuffer = sn.LineBuffer
+		}
 	}
-	sp.ReflectLine(lineBuffer, str)
+
+	sp.ReflectLine(sn.LineBuffer, str)
 }
 
 // SyncData: 요구사항에서 주어진 구조
@@ -314,40 +360,15 @@ func (sd *SyncData) modifyNode(n uint, cursorChar int, char rune, modifyCode Mod
 //	0-based 인덱스에서, 예를 들어, insertNode(0, "hello") → 리스트가 비어있다면 head가 "hello"가 됨.
 //	만약 이미 노드가 존재할 경우, insertNode(0, "world")는 새 노드를 head로 만들어 기존 노드가 뒤로 밀림.
 func (sd *SyncData) insertNode(n uint, newData string) {
-	newNode := &SyncNode{
-		PieceTable: NewPieceTable(newData),
-		LineBuffer: nil,
-		prev:       nil,
-		next:       nil,
-	}
-
-	// 빈 리스트인 경우
-	if sd.head == nil {
-		sd.head = newNode
-		return
-	}
-
-	// 삽입 위치가 0이면, 새 노드를 head로
 	if n == 0 {
-		newNode.next = sd.head
-		sd.head.prev = newNode
-		sd.head = newNode
+		sd.insertByPtr(nil, newData) // 빈 리스트 또는 맨 앞에 삽입
 		return
 	}
-
-	// 0이 아닌 경우, (n-1)번째 노드를 찾아 그 뒤에 삽입
-	cur, found := sd.findNode(n - 1) // (n-1)번째 노드 뒤에 삽입
+	cur, found := sd.findNode(n - 1) // n-1 번째 노드 뒤에 삽입
 	if !found {
 		return
 	}
-
-	// cur가 (n-1)번째 노드임
-	newNode.next = cur.next
-	newNode.prev = cur
-	if cur.next != nil {
-		cur.next.prev = newNode
-	}
-	cur.next = newNode
+	sd.insertByPtr(cur, newData)
 }
 
 // deleteNode(n): n번째 노드를 삭제 (0-based)
@@ -357,19 +378,8 @@ func (sd *SyncData) deleteNode(n uint) {
 	if !found {
 		return
 	}
-	// cur가 n번째 노드
-	if cur.prev == nil {
-		// head 삭제
-		sd.head = cur.next
-		if sd.head != nil {
-			sd.head.prev = nil
-		}
-	} else {
-		cur.prev.next = cur.next
-		if cur.next != nil {
-			cur.next.prev = cur.prev
-		}
-	}
+	sd.deleteByPtr(cur)
+
 }
 
 // sliceNode(n, char): n번째 노드의 PieceTable.data를 char 인덱스에서 슬라이스
@@ -383,23 +393,138 @@ func (sd *SyncData) sliceNode(n, char uint) {
 	if !found {
 		return
 	}
+	sd.sliceByPtr(cur, char)
 
-	frontPT, backPT := cur.PieceTable.SlicePieceTable(int(char))
+}
 
-	// n번째 노드는 front로 변경
-	cur.PieceTable = frontPT
+// insertByPtr(refNode, newData):
+// refNode "앞"에 새 노드를 삽입.
+func (sd *SyncData) insertByPtr(refNode *SyncNode, newData string) {
+	newNode := &SyncNode{
+		PieceTable: NewPieceTable(newData),
+		LineBuffer: nil, // 이후 SyncProtocol.syncNode에서 설정됨
+		prev:       nil,
+		next:       nil,
+	}
 
-	// back이 존재하면, 새 노드를 만들어 n번째 노드 뒤에 삽입
+	if refNode == nil {
+		if sd.head == nil {
+			sd.head = newNode
+		} else {
+			newNode.next = sd.head
+			sd.head.prev = newNode
+			sd.head = newNode
+		}
+	} else {
+		newNode.next = refNode
+		newNode.prev = refNode.prev
+		if refNode.prev != nil {
+			refNode.prev.next = newNode
+		} else {
+			sd.head = newNode
+		}
+		refNode.prev = newNode
+	}
+}
+
+// deleteByPtr(refNode):
+// refNode를 이중 연결 리스트에서 제거.
+func (sd *SyncData) deleteByPtr(refNode *SyncNode) {
+	if refNode == nil || sd.head == nil {
+		return
+	}
+
+	// head 삭제 처리
+	if refNode == sd.head {
+		sd.head = refNode.next
+		if sd.head != nil {
+			sd.head.prev = nil
+		}
+	} else {
+		// 중간(또는 tail) 노드 제거
+		if refNode.prev != nil {
+			refNode.prev.next = refNode.next
+		}
+		if refNode.next != nil {
+			refNode.next.prev = refNode.prev
+		}
+	}
+
+	// 참조 해제
+	refNode.prev = nil
+	refNode.next = nil
+}
+
+// sliceByPtr(refNode, char):
+// refNode.PieceTable을 앞뒤로 분리하여 refNode 앞부분 유지, 뒷부분을 새로운 노드로 삽입.
+func (sd *SyncData) sliceByPtr(refNode *SyncNode, char uint) {
+	if refNode == nil || refNode.PieceTable == nil {
+		return
+	}
+
+	frontPT, backPT := refNode.PieceTable.SlicePieceTable(int(char))
+	refNode.PieceTable = frontPT // 기존 노드는 앞부분 유지
+
+	// 새로운 노드 생성 및 연결
 	newNode := &SyncNode{
 		PieceTable: backPT,
 		LineBuffer: nil,
-		prev:       cur,
-		next:       cur.next,
+		prev:       refNode,
+		next:       refNode.next,
 	}
-	if cur.next != nil {
-		cur.next.prev = newNode
+	if refNode.next != nil {
+		refNode.next.prev = newNode
 	}
-	cur.next = newNode
+	refNode.next = newNode
+
+	// **새 노드가 없으면 head 갱신**
+	if sd.head == nil {
+		sd.head = newNode
+	}
+}
+
+// mergeNodeByPtr은 아예 새 문자열 생성하는 식으로 머징
+// prev를 살리는 방식으로 머지합니다.
+func (sd *SyncData) mergeNodeByPtr(prev, next *SyncNode) {
+	if prev == nil || next == nil || prev.next != next || next.prev != prev {
+		return
+	}
+
+	prevStr := prev.PieceTable.String()
+	nextStr := next.PieceTable.String()
+	mergedStr := prevStr + nextStr
+	prev.PieceTable = NewPieceTable(mergedStr)
+
+	if next.next != nil {
+		next.next.prev = prev
+	}
+	prev.next = next.next
+
+	next.prev = nil
+	next.next = nil
+
+	if sd.head == next {
+		sd.head = prev
+	}
+
+	// 호출자가 SyncProtocol 인스턴스에 접근할 수 있도록 외부에서 syncNode 호출 필요
+	// 또는 SyncProtocol을 매개변수로 받아 내부에서 호출 가능:
+	// sp.syncNode(prev)
+}
+
+// modifyByPtr(refNode, cursorChar, char, modifyCode):
+// refNode의 PieceTable을 수정.
+func (sd *SyncData) modifyByPtr(refNode *SyncNode, cursorChar int, char rune, modifyCode ModifyCode) {
+	if refNode == nil || refNode.PieceTable == nil {
+		return
+	}
+
+	switch modifyCode {
+	case DeleteASCII:
+		refNode.PieceTable.DeleteRune(cursorChar)
+	case InsertASCII:
+		refNode.PieceTable.InsertRune(cursorChar, char)
+	}
 }
 
 // findNode(n): 0-based index로 n번째 노드를 찾음
@@ -420,6 +545,26 @@ func (sd *SyncData) findNode(n uint) (*SyncNode, bool) {
 	}
 
 	return cur, true
+}
+
+func (sd *SyncData) findOrder(sn *SyncNode) int {
+	if sd.head == nil {
+		return -1
+	}
+	cur := sd.head
+	count := uint(0)
+	for cur.next != nil {
+		if cur == sn {
+			return int(count)
+		}
+		cur = cur.next
+		count++
+	}
+	if cur == sn {
+		return int(count)
+	}
+	return -1
+
 }
 
 // 그리고, 두 함수를 이 findSyncNode에 위임
