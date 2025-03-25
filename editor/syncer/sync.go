@@ -1,4 +1,4 @@
-package main
+package syncer
 
 import (
 	"go_editor/editor/commander"
@@ -71,6 +71,7 @@ func (sp *SyncProtocol) ProcessCommand(cmd commander.Command) (
 	}
 
 	opSequences.ExecuteAll(sp)
+
 	return true
 
 }
@@ -243,11 +244,11 @@ func (sp *SyncProtocol) buildCursorOp(cmd commander.Command) *OpCursor {
 				opCursorCode = OpDownCursor
 			}
 		case commander.KeyLeft:
-			if textLen == 0 {
+			if textLen == 0 || sp.cursor.currentCharInset == 0 {
 				if syncNode.IsUpperEnd() {
 					opCursorCode = OpHoldCursor
 				} else {
-					opCursorCode = OpDownRightEndCursor
+					opCursorCode = OpUpCursor
 				}
 			} else {
 				opCursorCode = OpLeftCursor
@@ -274,10 +275,12 @@ func (sp *SyncProtocol) syncNode(sn *SyncNode) {
 	str := sn.PieceTable.String()
 	if sn.LineBuffer == nil {
 		needToMove := false
-		if sn == sp.syncData.findSyncNodeByLineBuffer(sp.cursor.currentLineBuffer) {
+		if sp.syncData.findOrder(sn) == sp.syncData.findOrder(sp.syncData.findSyncNodeByLineBuffer(sp.cursor.currentLineBuffer)) {
 			needToMove = true
 		}
+
 		sn.LineBuffer = sp.NewLineBuffer() // LineBuffer를 생성하고 SyncNode에 설정
+
 		if needToMove {
 			sp.cursor.currentLineBuffer = sn.LineBuffer
 		}
@@ -463,6 +466,9 @@ func (sd *SyncData) sliceByPtr(refNode *SyncNode, char uint) {
 	}
 
 	frontPT, backPT := refNode.PieceTable.SlicePieceTable(int(char))
+	if frontPT == nil || backPT == nil {
+		return
+	}
 	refNode.PieceTable = frontPT // 기존 노드는 앞부분 유지
 
 	// 새로운 노드 생성 및 연결

@@ -1,4 +1,4 @@
-package main
+package syncer
 
 import "fmt"
 
@@ -296,7 +296,8 @@ func (so *OpSync) executeOp(sp *SyncProtocol) {
 	case OpNodeSlicedSync:
 		fmt.Println("Sync -> NodeSlicedSync 실행")
 		//스타트와 스타트의 next (이 경우엔 둘다 반드시 존재.)
-		nextNode := so.startNode.prev
+		nextNode := so.startNode.next
+
 		if nextNode != nil {
 			sp.syncNode(nextNode)
 		}

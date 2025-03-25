@@ -1,4 +1,4 @@
-package main
+package syncer
 
 import (
 	"strings"
@@ -69,8 +69,9 @@ func (pt *PieceTable) String() string {
 
 // findPieceAtRuneIndex: 문서상의 0-based 인덱스에 해당하는 piece와 내부 offset 반환
 func (pt *PieceTable) findPieceAtRuneIndex(index int) (pieceIndex int, internalOffset int) {
-	if index < 0 {
-		panic("index cannot be negative")
+	if index <= 0 {
+		println("findPieceAtRuneIndex: index <= 0")
+		return -1, -1
 	}
 	var sum int
 	for i, piece := range pt.pieces {
@@ -119,6 +120,10 @@ func (pt *PieceTable) Insert(index int, newText string) {
 	}
 
 	pieceIndex, internalOffset := pt.findPieceAtRuneIndex(realOffset)
+	if pieceIndex < 0 {
+		// 문서가 비어있는 경우
+		return
+	}
 	oldPiece := pt.pieces[pieceIndex]
 
 	frontLength := internalOffset                  // 앞쪽은 index 이전까지
@@ -183,7 +188,10 @@ func (pt *PieceTable) Delete(cursor, length int) {
 
 	// 1) 시작 지점의 Piece index & offset 구하기
 	pieceIndex, offsetInPiece := pt.findPieceAtRuneIndex(start)
-
+	if pieceIndex < 0 {
+		// 문서가 비어있는 경우
+		return
+	}
 	var processed int
 	for processed < toDelete && pieceIndex < len(pt.pieces) {
 		piece := pt.pieces[pieceIndex]
@@ -272,8 +280,9 @@ func (pt *PieceTable) DeleteRune(index int) {
 // -------------------------------------
 
 func (pt *PieceTable) SlicePieceTable(index int) (*PieceTable, *PieceTable) {
-	if index < 0 || index > pt.Length() {
-		panic("SlicePieceTable: Index out of range")
+	if index <= 0 || index > pt.Length() {
+		println("SlicePieceTable: index는 0보다 커야 슬라이싱 가능합니다")
+		return nil, nil
 	}
 
 	frontPT := &PieceTable{

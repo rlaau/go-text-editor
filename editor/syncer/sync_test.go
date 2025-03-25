@@ -1,15 +1,16 @@
-package main
+package syncer
 
 import (
 	"fmt"
 	"go_editor/editor/commander"
+	"testing"
 )
 
 // (4) 테스트 코드
 // -----------------------------------------------------
 
 // 테스트용 main 함수
-func main() {
+func TestSync(t *testing.T) {
 	// 1) 프로토콜 생성
 	sp := NewSyncProtocol(800, 600, 0xFF000000, 0xFFFFFFFF, 16)
 

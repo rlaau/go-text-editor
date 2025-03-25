@@ -1,4 +1,4 @@
-package main
+package syncer
 
 import (
 	glp "go_editor/editor/screener/glyph"
@@ -15,17 +15,41 @@ func (sp *SyncProtocol) NewLineBuffer() *LineBuffer {
 	return &LineBuffer{data: data}
 }
 
-// ReflectCursorAt: lineIndex, charIndex
-// cursor.ReflectCursor => lineBuffer 상에 커서 픽셀 덮어쓰기
-func (sp *SyncProtocol) ReflectCursorAt(lineBuffer *LineBuffer, charInset int) {
-	println("커서 드로우 글자위치", charInset)
-	sp.cursor.CoordinateCursor(sp, lineBuffer, charInset) // lineIndex, row=y, col=x
+// FlushLineBuffer: collects all LineBuffer data from nodes into a 2D array for rendering
+func (sp *SyncProtocol) FlushLineBuffer() [][]uint32 {
+
+	lineBuffers := [][]uint32{}
+
+	if sp.IsCursorVisible() {
+		sp.cursor.CusorDrawOn(sp)
+	} else {
+		sp.cursor.ClearCursor(sp)
+	}
+
+	head := sp.syncData.head
+	if head == nil {
+		println("emtpy list")
+		return lineBuffers
+	}
+
+	// Check if syncData exists and has nodes
+	if sp.syncData != nil && sp.syncData.head != nil {
+		// Iterate through all nodes in the linked list
+		sp.syncData.ForEach(func(node *SyncNode) {
+			if node.LineBuffer != nil {
+				// Create a copy of the line data to avoid reference issues
+				lineData := make([]uint32, len(node.LineBuffer.data))
+				copy(lineData, node.LineBuffer.data)
+
+				// Add this line to our collection
+				lineBuffers = append(lineBuffers, lineData)
+			}
+		})
+	}
+
+	return lineBuffers
 }
 
-// ClearCursor:
-func (sp *SyncProtocol) ClearCursor() {
-	sp.cursor.ClearCursor(sp)
-}
 func (sp *SyncProtocol) ReflectLine(l *LineBuffer, text string) {
 	for i := range l.data {
 		l.data[i] = sp.bgColor

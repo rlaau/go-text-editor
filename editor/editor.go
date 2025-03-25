@@ -5,6 +5,7 @@ import (
 
 	"go_editor/editor/commander"
 	"go_editor/editor/screener"
+	"go_editor/editor/syncer"
 	"time"
 
 	"github.com/BurntSushi/xgbutil"
@@ -26,9 +27,9 @@ type Editor struct {
 
 	// 커서 표시
 	cursorVisible bool
-	cursorLine    int
-	cursorChar    int
 	xu            *xgbutil.XUtil
+
+	syncProtocol *syncer.SyncProtocol
 }
 
 // NewEditor: Editor 인스턴스 생성
@@ -37,7 +38,7 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("XGBUtil 연결 실패: %v", err)
 	}
-
+	syncProtocol := syncer.NewSyncProtocol(width, height, 0xFF000000, 0xFFFFFFFF, 16)
 	scr, err := screener.NewScreener(xu, width, height, 0xFF000000, 0xFFFFFFFF)
 	if err != nil {
 		return nil, err
@@ -55,9 +56,8 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 		lines:         []string{"Hello", "KeyPress Count: 0"}, // 초기 2개 라인,
 		textCount:     0,
 		cursorVisible: false,
-		// 커서는 line=1, char=3 초기값
-		cursorLine: 0,
-		cursorChar: 0,
+
+		syncProtocol: syncProtocol,
 	}
 	// X 키 바인딩 초기화
 	keybind.Initialize(xu)
@@ -67,7 +67,6 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 // Run: 메인 이벤트 루프
 func (e *Editor) Run() {
 
-	e.reflectAll()
 	e.commander.StartListening()
 
 	for e.running {
@@ -78,7 +77,8 @@ func (e *Editor) Run() {
 
 		case <-e.fpsTicker.C:
 			// 30FPS로 화면 Flush
-			e.screener.FlushBuffer()
+
+			e.screener.FlushBuffer(e.syncProtocol.FlushLineBuffer())
 
 		case cmd, ok := <-e.commander.GetCommandChan():
 			if !ok {
@@ -92,56 +92,19 @@ func (e *Editor) Run() {
 
 // processCommand: Command를 처리
 func (e *Editor) processCommand(cmd commander.Command) {
-	switch cmd.Code {
-	case commander.CmdExit:
-		println("엑싯")
+	//레이어 2 수정
+	e.syncProtocol.ClearCursor()
+	//레이어 1 수정
+	isContinue := e.syncProtocol.ProcessCommand(cmd)
+	if !isContinue {
 		e.running = false
-	case commander.CmdDelete:
-		println("딜릿")
-	case commander.CmdInsert:
-		println("인서트")
-	case commander.CmdMove:
-		//TODO 여기도 결국 지우기.
-		//TODO 커서위치 관리 역시 최종적으론 싱크 프로토콜이 내부적으로 동기화함
-		//TODO e에는 커서 좌표관련 정보가 없게 하기
-		println("무브")
-		if charInput, ok := cmd.Input.(commander.CharInput); ok {
-			switch charInput.Char {
-			case commander.KeyUp:
-				e.cursorLine = max(0, e.cursorLine-1)
-			case commander.KeyDown:
-				e.cursorLine++ // 줄 수 제한 없음, 필요하면 maxLine 체크 추가
-			case commander.KeyLeft:
-				e.cursorChar = max(0, e.cursorChar-1)
-			case commander.KeyRight:
-				e.cursorChar++ // 글자 수 제한 없음, 필요하면 줄 길이 체크 추가
-			}
-			e.cursorVisible = true
-
-		}
-
+		return
 	}
-	//TODO 사실상 이 밑은 제거 필요
-	e.lines[1] = fmt.Sprintf("KeyPress Count: %d", e.textCount)
-	e.textCount++
-	e.reflectAll()
-}
-
-// reflectAll: 모든 라인을 스크리너에 반영
-// TODO 얘는 추후 제거
-// TODO 커서 관련 로직도 추후 동기화하기
-func (e *Editor) reflectAll() {
-	e.screener.Clear(0xFFFFFFFF)
-
-	// 간단: line 0 -> y=50, line1 -> y= 70
-	for i, text := range e.lines {
-		e.screener.ReflectLine(i, text)
+	//레이어 2 수정
+	if e.syncProtocol.IsCursorVisible() {
+		e.syncProtocol.CursorDrawOn()
 	}
-	if e.cursorVisible {
-		e.screener.ReflectCursorAt(e.cursorLine, e.cursorChar)
-	} else {
-		e.screener.ClearCursor()
-	}
+
 }
 
 // Stop: Editor 종료
@@ -153,11 +116,9 @@ func (e *Editor) Stop() {
 
 // toggleCursorBlink: 커서 깜빡
 func (e *Editor) toggleCursorBlink() {
-	if e.cursorVisible {
-		e.screener.ClearCursor()
-		e.cursorVisible = false
+	if e.syncProtocol.IsCursorVisible() {
+		e.syncProtocol.ClearCursor()
 	} else {
-		e.screener.ReflectCursorAt(e.cursorLine, e.cursorChar)
-		e.cursorVisible = true
+		e.syncProtocol.CursorDrawOn()
 	}
 }

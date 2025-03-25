@@ -1,4 +1,4 @@
-package main
+package syncer
 
 import glp "go_editor/editor/screener/glyph"
 
@@ -14,6 +14,21 @@ type Cursor struct {
 	visible bool
 }
 
+func (sp *SyncProtocol) IsCursorVisible() bool {
+	return sp.cursor.visible
+}
+func (sp *SyncProtocol) SetCursorVisible(visible bool) {
+	sp.cursor.visible = visible
+}
+func (sp *SyncProtocol) CursorDrawOn() {
+	sp.cursor.CusorDrawOn(sp)
+}
+
+// ClearCursor:
+func (sp *SyncProtocol) ClearCursor() {
+	sp.cursor.ClearCursor(sp)
+}
+
 func NewCursor(width, height int, color uint32) *Cursor {
 	return &Cursor{
 		width:  width,
@@ -25,17 +40,29 @@ func NewCursor(width, height int, color uint32) *Cursor {
 func (c *Cursor) GetCoordinate() (*LineBuffer, int) {
 	return c.currentLineBuffer, c.currentCharInset
 }
+func (c *Cursor) CusorDrawOn(sp *SyncProtocol) {
+	c.CoordinateCursor(sp, c.currentLineBuffer, c.currentCharInset)
+
+}
+
+// ReflectCursorAt: lineIndex, charIndex
+// cursor.ReflectCursor => lineBuffer 상에 커서 픽셀 덮어쓰기
+func (sp *SyncProtocol) ReflectCursorAt(lineBuffer *LineBuffer, charInset int) {
+
+	sp.cursor.CoordinateCursor(sp, lineBuffer, charInset) // lineIndex, row=y, col=x
+}
 
 // CoordinateCursor: 커서를 (lineIndex, row, col)에 그린다
 func (c *Cursor) CoordinateCursor(sp *SyncProtocol, lineBuffer *LineBuffer, charInset int) {
-	if c.visible {
-		c.ClearCursor(sp)
-	}
+
+	c.ClearCursor(sp)
 	//우선 c의 상태를 변경
 	c.currentLineBuffer = lineBuffer
 	c.currentCharInset = charInset
 	//변경된 c의 상태 바탕으로 픽셀 데이터에 매핑
+
 	col, row := c.mapInset2pixColRow(sp)
+
 	c.captureBuffer(sp)
 	// 커서 폭*높이만큼 픽셀 덮어쓰기
 	for ry := 0; ry < c.height; ry++ {
@@ -74,6 +101,7 @@ func (c *Cursor) captureBuffer(sp *SyncProtocol) {
 	for ry := 0; ry < c.height; ry++ {
 		for cx := 0; cx < c.width; cx++ {
 			lineBuffer := c.currentLineBuffer
+
 			ry2 := startRow + ry
 			cx2 := startCol + cx
 			if ry2 < 0 || ry2 >= sp.LineHeight {
