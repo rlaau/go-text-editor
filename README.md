@@ -2,6 +2,6 @@
 ### For Low-level rendering
 1. 라이브러리는 최대한 저수준으로 사용 (랜더링도 x서버와 최대한 맞닿은 코드 사용)
 2. 처음부터 끝까지 모든 기능 코드로 구현하기 
-### For Custom Sequntial Loginc
+### For Custom Sequential Loginc
 1. 사용자 입력을 받은 프로그램이, 화면을 바꾸지까지의 복잡한 과정을 추상화-설계-구현.
 2. 정해진 공통 시퀀스 구조를 만든 후, 각 과정을 op코드로 빌딩하여 인터프리팅 해보는 방식.
