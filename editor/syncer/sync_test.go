@@ -23,26 +23,26 @@ func TestSync(t *testing.T) {
 	sp.syncData.modifyNode(1, 1, rune('t'), InsertASCII)
 
 	fmt.Println("== 초기 리스트 ==")
-	printList(sp.syncData.head)
+	PrintList(sp.syncData.head)
 
 	// 3) 첫 번째 노드("world")에서 인덱스 2를 기준으로 슬라이스
 	//    ("wo" | "rld") 예시
 	sp.syncData.sliceNode(0, 2)
 	fmt.Println("\n== sliceNode(0, 2) 호출 후 ==")
-	printList(sp.syncData.head)
+	PrintList(sp.syncData.head)
 
 	// 4) 두 번째 노드("llo")를 삭제 (0-based: index=1)
 	sp.syncData.deleteNode(1)
 	fmt.Println("\n== delete(1) 호출 후 (이중 연결 리스트) ==")
-	printList(sp.syncData.head)
+	PrintList(sp.syncData.head)
 
 	sp.syncData.modifyNode(0, 1, rune('k'), InsertASCII)
 	fmt.Println("\n== 모디파이1")
-	printList(sp.syncData.head)
+	PrintList(sp.syncData.head)
 
 	sp.syncData.modifyNode(0, 1, rune(' '), DeleteASCII)
 	fmt.Println("\n== 모디파이2")
-	printList(sp.syncData.head)
+	PrintList(sp.syncData.head)
 
 	// 5) 남은 리스트 역순 확인
 	fmt.Println("\n== 역순 확인 ==")
@@ -86,14 +86,14 @@ func TestSync(t *testing.T) {
 		fmt.Printf("   Processed => isContinue=%v\n", isContinue)
 
 		// 매번 실행 후, 리스트 상태 확인
-		printList(sp.syncData.head)
+		PrintList(sp.syncData.head)
 
 		println("\n")
 	}
 }
 
-// printList: head부터 next 방향으로 순회하며 출력
-func printList(head *SyncNode) {
+// PrintList: head부터 next 방향으로 순회하며 출력
+func PrintList(head *SyncNode) {
 	if head == nil {
 		fmt.Println("Empty list.")
 		return

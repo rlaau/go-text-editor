@@ -69,7 +69,7 @@ func (pt *PieceTable) String() string {
 
 // findPieceAtRuneIndex: 문서상의 0-based 인덱스에 해당하는 piece와 내부 offset 반환
 func (pt *PieceTable) findPieceAtRuneIndex(index int) (pieceIndex int, internalOffset int) {
-	if index <= 0 {
+	if index < 0 {
 		println("findPieceAtRuneIndex: index <= 0")
 		return -1, -1
 	}

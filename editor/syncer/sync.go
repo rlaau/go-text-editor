@@ -429,6 +429,26 @@ func (sd *SyncData) insertByPtr(refNode *SyncNode, newData string) {
 		refNode.prev = newNode
 	}
 }
+func (sd *SyncData) appendByPtr(refNode *SyncNode, newData string) *SyncNode {
+	//Node를 refNode 뒤에 추가
+	newNode := &SyncNode{
+		PieceTable: NewPieceTable(newData),
+		LineBuffer: nil,
+		prev:       nil,
+		next:       nil,
+	}
+
+	if refNode == nil {
+		sd.head = newNode
+		newNode.prev = nil
+		newNode.next = nil
+	} else {
+		newNode.prev = refNode
+		newNode.next = nil
+		refNode.next = newNode
+	}
+	return newNode
+}
 
 // deleteByPtr(refNode):
 // refNode를 이중 연결 리스트에서 제거.

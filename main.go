@@ -5,6 +5,7 @@ import (
 )
 
 func main() {
+
 	// Editor 생성 (800x600, 30FPS)
 	edt, err := editor.NewEditor(800, 600, 30)
 	if err != nil {

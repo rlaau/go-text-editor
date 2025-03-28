@@ -27,6 +27,7 @@ func (ops *opSequences) ExecuteAll(sp *SyncProtocol) {
 		current.executeOp(sp)
 		current = current.next()
 	}
+	println("모든 노드의 executeOp() 실행 완료")
 }
 
 // ForEach() : 모든 노드를 순회하며, 각 노드의 opInfo를 fn으로 전달
@@ -229,7 +230,10 @@ func (nt *OpNodeText) executeOp(sp *SyncProtocol) {
 		fmt.Printf("NodeText -> DeleteRune(%c)\n", nt.char)
 		//여기선 최대한 간결한 동장을 지향함
 		// 가드클로스는 빌딩때 다 처리
+		println(charInset, "의 문자 삭제함")
+		println("전처리 전", syncNode.PieceTable.String())
 		syncNode.PieceTable.DeleteRune(charInset)
+		println("전처리 이후", syncNode.PieceTable.String())
 	case OpHoldRune:
 		fmt.Printf("NodeText -> HoldRune(%c)\n", nt.char)
 	default:

@@ -51,6 +51,7 @@ func (sp *SyncProtocol) FlushLineBuffer() [][]uint32 {
 }
 
 func (sp *SyncProtocol) ReflectLine(l *LineBuffer, text string) {
+	//배경색 칠하기
 	for i := range l.data {
 		l.data[i] = sp.bgColor
 	}

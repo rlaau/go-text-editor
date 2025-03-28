@@ -2,8 +2,11 @@ package editor
 
 import (
 	"fmt"
+	"log"
+	"os"
 
 	"go_editor/editor/commander"
+	"go_editor/editor/handlefile"
 	"go_editor/editor/screener"
 	"go_editor/editor/syncer"
 	"time"
@@ -38,7 +41,26 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("XGBUtil 연결 실패: %v", err)
 	}
-	syncProtocol := syncer.NewSyncProtocol(width, height, 0xFF000000, 0xFFFFFFFF, 16)
+	savePath := handlefile.GetSaveTxtPath()
+	var syncProtocol *syncer.SyncProtocol
+
+	// 파일 존재 여부 및 내용 확인
+	fileInfo, err := os.Stat(savePath)
+	if err != nil || fileInfo.Size() == 0 {
+		// 파일이 없거나 비어있으면 NewSyncProtocol 호출
+		if os.IsNotExist(err) {
+			log.Printf("🆕 파일이 존재하지 않아 새 문서를 생성합니다: %s", savePath)
+		} else if err == nil && fileInfo.Size() == 0 {
+			log.Printf("🆕 파일이 비어있어 새 문서를 생성합니다: %s", savePath)
+		} else {
+			log.Printf("⚠️ 파일 접근 오류: %v, 새 문서를 생성합니다", err)
+		}
+		syncProtocol = syncer.NewSyncProtocol(width, height, 0xFF000000, 0xFFFFFFFF, 16)
+	} else {
+		// 파일이 존재하고 내용이 있으면 LoadSyncProtocol 호출
+		log.Printf("📄 기존 파일을 불러옵니다: %s (크기: %d 바이트)", savePath, fileInfo.Size())
+		syncProtocol = syncer.LoadSyncProtocol(width, height, 0xFF000000, 0xFFFFFFFF, 16)
+	}
 	scr, err := screener.NewScreener(xu, width, height, 0xFF000000, 0xFFFFFFFF)
 	if err != nil {
 		return nil, err
@@ -66,6 +88,7 @@ func NewEditor(width, height int, fps int) (*Editor, error) {
 
 // Run: 메인 이벤트 루프
 func (e *Editor) Run() {
+	defer e.syncProtocol.SaveToFile()
 
 	e.commander.StartListening()
 
